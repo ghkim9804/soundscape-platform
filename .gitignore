@@ -1,0 +1,7 @@
+node_modules/
+data/responses.json
+data/comparisons.json
+.env
+*.log
+.DS_Store
+Thumbs.db

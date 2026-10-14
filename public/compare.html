@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>선호도 비교 세션 — 음환경 평가 플랫폼</title>
+<style>
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --A: #2563eb;      /* A 자극 색 */
+  --B: #f59e0b;      /* B 자극 색 */
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --text: #1e293b;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --radius: 14px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Pretendard', 'Noto Sans KR', -apple-system, sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh;
+}
+
+/* ── 진행바 ── */
+#prog-wrap { position: fixed; top:0; left:0; right:0; height:4px; background:var(--border); z-index:100; }
+#prog-bar  { height:100%; background: linear-gradient(90deg, var(--A), var(--B)); transition: width .4s; width:0%; }
+
+/* ── 스크린 ── */
+.screen { display:none; min-height:100vh; padding:56px 20px 40px; max-width:960px; margin:0 auto; flex-direction:column; justify-content:center; }
+.screen.active { display:flex; }
+
+/* ── 카드 ── */
+.card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); box-shadow:var(--shadow); }
+
+/* ── 버튼 ── */
+.btn { display:inline-flex; align-items:center; gap:8px; padding:12px 28px; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; transition:all .15s; }
+.btn-primary { background:var(--primary); color:#fff; }
+.btn-primary:hover { background:var(--primary-dark); transform:translateY(-1px); }
+.btn-outline { background:#fff; color:var(--text); border:1.5px solid var(--border); }
+.btn-outline:hover { background:#f1f5f9; }
+
+/* ════════════════════════════════════════════════
+   랜딩
+════════════════════════════════════════════════ */
+#screen-landing { gap:0; }
+#screen-landing .inner { padding:40px; }
+#screen-landing h1 { font-size:1.8rem; font-weight:800; margin-bottom:10px; }
+.badge-row { display:flex; gap:8px; flex-wrap:wrap; margin:14px 0; }
+.badge { padding:4px 12px; border-radius:999px; background:#eff6ff; color:var(--primary); font-size:13px; font-weight:500; }
+.info-box { background:#f8fafc; border-radius:10px; padding:18px; border:1px solid var(--border); margin:20px 0; }
+.info-box p { font-size:14px; line-height:1.8; }
+
+/* ════════════════════════════════════════════════
+   비교 화면
+════════════════════════════════════════════════ */
+#screen-compare { gap:0; }
+
+.compare-header {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:16px; flex-wrap:wrap; gap:8px;
+}
+.pair-counter { font-size:14px; color:var(--muted); font-weight:500; }
+.pair-meta {
+  display:flex; gap:8px;
+}
+.meta-chip {
+  padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600;
+}
+.chip-loc { background:#eff6ff; color:var(--primary); }
+.chip-cat { background:#ecfdf5; color:#059669; }
+
+/* ── 자극 그리드 ── */
+.stimuli-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;
+}
+@media (max-width:640px) { .stimuli-grid { grid-template-columns:1fr; } }
+
+.stim-card {
+  border-radius:12px; overflow:hidden;
+  border:2px solid var(--border); background:#0f172a;
+  transition: border-color .2s, box-shadow .2s;
+  cursor:default;
+}
+.stim-card.selected-A { border-color:var(--A); box-shadow:0 0 0 4px rgba(37,99,235,.2); }
+.stim-card.selected-B { border-color:var(--B); box-shadow:0 0 0 4px rgba(245,158,11,.2); }
+
+.stim-label {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px;
+  font-size:13px; font-weight:700;
+}
+.label-A { background:var(--A); color:#fff; }
+.label-B { background:var(--B); color:#fff; }
+.stim-ratio-badge {
+  font-size:11px; font-weight:500; opacity:.85;
+}
+
+.stim-image { width:100%; height:180px; object-fit:cover; display:block; }
+.stim-placeholder {
+  width:100%; height:180px; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; gap:8px; background:#1e293b; color:#475569;
+  font-size:13px;
+}
+
+/* ── 미니 오디오 플레이어 ── */
+.mini-player {
+  padding:10px 14px; display:flex; align-items:center; gap:10px;
+  background:rgba(0,0,0,0.5);
+}
+.mini-play {
+  width:36px; height:36px; border-radius:50%; border:none; cursor:pointer;
+  font-size:14px; display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; transition:all .15s; color:#fff;
+}
+.mini-play-A { background:var(--A); }
+.mini-play-A:hover { background:var(--primary-dark); }
+.mini-play-B { background:var(--B); }
+.mini-play-B:hover { background:#d97706; }
+.mini-play.playing { animation:mini-pulse 1.2s infinite; }
+@keyframes mini-pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
+
+.mini-info { flex:1; }
+.mini-label { color:#e2e8f0; font-size:12px; font-weight:600; }
+.mini-prog-track { height:3px; background:rgba(255,255,255,0.15); border-radius:2px; margin-top:5px; overflow:hidden; }
+.mini-prog-fill-A { height:100%; background:var(--A); transition:width .3s; width:0%; }
+.mini-prog-fill-B { height:100%; background:var(--B); transition:width .3s; width:0%; }
+.mini-time { color:#64748b; font-size:11px; font-variant-numeric:tabular-nums; }
+
+.must-play-hint {
+  font-size:11px; color:#fbbf24; margin-top:2px; display:none;
+}
+
+/* ── 선택 버튼 영역 ── */
+.choice-section {
+  padding:24px; background:var(--card);
+  border-radius:var(--radius); border:1px solid var(--border);
+}
+.choice-title { font-size:15px; font-weight:700; margin-bottom:16px; text-align:center; }
+
+.choice-btns {
+  display:grid; grid-template-columns:1fr auto 1fr; gap:12px; align-items:center;
+}
+@media (max-width:480px) { .choice-btns { grid-template-columns:1fr; } }
+
+.choice-btn {
+  padding:18px 12px; border:2px solid var(--border); border-radius:12px;
+  background:#fff; cursor:pointer; font-size:14px; font-weight:700;
+  transition:all .2s; text-align:center; display:flex; flex-direction:column;
+  align-items:center; gap:6px;
+}
+.choice-btn:hover { transform:translateY(-2px); }
+.choice-A { border-color:var(--A); }
+.choice-A:hover, .choice-A.selected { background:var(--A); color:#fff; box-shadow:0 4px 14px rgba(37,99,235,.35); }
+.choice-B { border-color:var(--B); }
+.choice-B:hover, .choice-B.selected { background:var(--B); color:#fff; box-shadow:0 4px 14px rgba(245,158,11,.35); }
+.choice-equal { border-color:#94a3b8; }
+.choice-equal:hover, .choice-equal.selected { background:#64748b; color:#fff; }
+
+.choice-icon { font-size:1.8rem; }
+.choice-sub { font-size:11px; font-weight:400; opacity:.8; }
+
+.choice-divider { text-align:center; color:var(--muted); font-weight:700; font-size:13px; }
+
+/* ── 추가 코멘트 ── */
+.comment-wrap { margin-top:14px; }
+.comment-label { font-size:13px; color:var(--muted); margin-bottom:6px; }
+.comment-input {
+  width:100%; padding:10px 14px; border:1.5px solid var(--border); border-radius:8px;
+  font-size:14px; background:#fff; resize:vertical; min-height:60px;
+  transition:border-color .15s; font-family:inherit;
+}
+.comment-input:focus { outline:none; border-color:var(--primary); }
+
+.nav-row { display:flex; justify-content:space-between; align-items:center; margin-top:16px; gap:12px; }
+.warn-msg { color:#ef4444; font-size:13px; font-weight:500; display:none; }
+
+/* ════════════════════════════════════════════════
+   완료
+════════════════════════════════════════════════ */
+#screen-complete .card { text-align:center; padding:48px 32px; }
+.done-icon { font-size:3.5rem; margin-bottom:16px; }
+.done-title { font-size:1.5rem; font-weight:800; margin-bottom:8px; }
+.done-sub { color:var(--muted); margin-bottom:28px; line-height:1.7; }
+
+.result-summary {
+  background:#f8fafc; border-radius:12px; padding:20px; border:1px solid var(--border);
+  margin-bottom:24px;
+}
+.result-summary h3 { font-size:14px; color:var(--muted); margin-bottom:14px; }
+.pref-bar { display:flex; gap:6px; height:28px; border-radius:6px; overflow:hidden; margin-bottom:8px; }
+.pref-bar-A { background:var(--A); display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:700; transition:flex .4s; }
+.pref-bar-eq { background:#94a3b8; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:700; transition:flex .4s; }
+.pref-bar-B { background:var(--B); display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:700; transition:flex .4s; }
+.pref-legend { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="prog-wrap"><div id="prog-bar"></div></div>
+
+<!-- ══ 랜딩 ══════════════════════════════════════════════════════ -->
+<div id="screen-landing" class="screen active">
+  <div class="card inner">
+    <h1>🆚 선호도 비교 세션</h1>
+    <p style="color:var(--muted); line-height:1.7;">
+      두 자극을 듣고 보면서 <strong>어느 쪽이 더 좋은지</strong> 선택해 주세요.<br>
+      같은 장소·카테고리에서 비율만 다른 자극끼리 비교합니다.
+    </p>
+
+    <div class="badge-row">
+      <span class="badge">📍 같은 장소 · 같은 카테고리</span>
+      <span class="badge">📊 비율 비교 (20/40/60/80%)</span>
+      <span class="badge">⏱️ 약 10~15분</span>
+    </div>
+
+    <div class="info-box">
+      <p>
+        ① 왼쪽(A)과 오른쪽(B) 자극을 <strong>각각 재생</strong>해서 들어주세요<br>
+        ② 이미지도 함께 확인하세요<br>
+        ③ 아래 세 버튼 중 하나를 선택하세요:<br>
+        &nbsp;&nbsp; <span style="color:var(--A); font-weight:700;">■ A가 더 좋다</span> &nbsp;|&nbsp;
+        <span style="color:#64748b; font-weight:700;">■ 비슷하다</span> &nbsp;|&nbsp;
+        <span style="color:var(--B); font-weight:700;">■ B가 더 좋다</span>
+      </p>
+    </div>
+
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="startComparison()">비교 시작 →</button>
+      <a href="/" class="btn btn-outline">← ISO PAQ 설문으로</a>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 비교 화면 ══════════════════════════════════════════════════ -->
+<div id="screen-compare" class="screen">
+
+  <div class="compare-header">
+    <div class="pair-counter">
+      쌍 <span id="pair-current">1</span> / <span id="pair-total">-</span>
+    </div>
+    <div class="pair-meta">
+      <span class="meta-chip chip-loc" id="chip-loc">-</span>
+      <span class="meta-chip chip-cat" id="chip-cat">-</span>
+    </div>
+  </div>
+
+  <!-- 좌우 자극 -->
+  <div class="stimuli-grid" id="stimuli-grid">
+
+    <!-- A -->
+    <div class="stim-card" id="card-A">
+      <div class="stim-label label-A">
+        <span>A 자극</span>
+        <span class="stim-ratio-badge" id="ratio-A">-</span>
+      </div>
+      <img id="img-A" class="stim-image" src="" alt="자극 A" style="display:none;">
+      <div id="placeholder-A" class="stim-placeholder">
+        <span style="font-size:2rem;">🖼️</span><span>[데모] 이미지 없음</span>
+      </div>
+      <div class="mini-player">
+        <button class="mini-play mini-play-A" id="play-A" onclick="toggleMini('A')">▶</button>
+        <audio id="audio-A" preload="auto"></audio>
+        <div class="mini-info">
+          <div class="mini-label" id="label-A">음원 A</div>
+          <div class="mini-prog-track"><div class="mini-prog-fill-A" id="prog-A"></div></div>
+          <div class="must-play-hint" id="hint-A">⚠ 재생 후 선택 가능</div>
+        </div>
+        <div class="mini-time" id="time-A">0:00</div>
+      </div>
+    </div>
+
+    <!-- B -->
+    <div class="stim-card" id="card-B">
+      <div class="stim-label label-B">
+        <span>B 자극</span>
+        <span class="stim-ratio-badge" id="ratio-B">-</span>
+      </div>
+      <img id="img-B" class="stim-image" src="" alt="자극 B" style="display:none;">
+      <div id="placeholder-B" class="stim-placeholder">
+        <span style="font-size:2rem;">🖼️</span><span>[데모] 이미지 없음</span>
+      </div>
+      <div class="mini-player">
+        <button class="mini-play mini-play-B" id="play-B" onclick="toggleMini('B')">▶</button>
+        <audio id="audio-B" preload="auto"></audio>
+        <div class="mini-info">
+          <div class="mini-label" id="label-B">음원 B</div>
+          <div class="mini-prog-track"><div class="mini-prog-fill-B" id="prog-B"></div></div>
+          <div class="must-play-hint" id="hint-B">⚠ 재생 후 선택 가능</div>
+        </div>
+        <div class="mini-time" id="time-B">0:00</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 선택 -->
+  <div class="choice-section">
+    <div class="choice-title">🎧 두 자극을 비교한 후, 선호하는 쪽을 선택하세요</div>
+
+    <div class="choice-btns">
+      <button class="choice-btn choice-A" id="btn-A" onclick="choose('A')">
+        <span class="choice-icon">🔵</span>
+        <span>A가 더 좋다</span>
+        <span class="choice-sub" id="sub-A">비율 -</span>
+      </button>
+
+      <div class="choice-divider">VS</div>
+
+      <button class="choice-btn choice-B" id="btn-B" onclick="choose('B')">
+        <span class="choice-icon">🟡</span>
+        <span>B가 더 좋다</span>
+        <span class="choice-sub" id="sub-B">비율 -</span>
+      </button>
+    </div>
+
+    <button class="choice-btn choice-equal" id="btn-eq" onclick="choose('equal')"
+      style="width:100%; margin-top:10px; flex-direction:row; justify-content:center; padding:12px;">
+      <span>≈&nbsp; 비슷하다 / 모르겠다</span>
+    </button>
+
+    <div class="comment-wrap">
+      <div class="comment-label">선택 이유 (선택사항)</div>
+      <textarea class="comment-input" id="comment-input" placeholder="왜 그쪽이 더 좋다고 느꼈나요? (자유롭게 입력)"></textarea>
+    </div>
+
+    <div class="warn-msg" id="warn-msg">⚠ A와 B를 모두 재생한 후 선택해 주세요.</div>
+
+    <div class="nav-row">
+      <button class="btn btn-outline" id="btn-prev" onclick="prevPair()">← 이전</button>
+      <button class="btn btn-primary" id="btn-next" onclick="nextPair()">다음 →</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ 완료 ═══════════════════════════════════════════════════════ -->
+<div id="screen-complete" class="screen">
+  <div class="card">
+    <div class="done-icon">🎉</div>
+    <div class="done-title">비교 완료!</div>
+    <div class="done-sub">
+      총 <strong id="done-total">-</strong>쌍을 비교해 주셨습니다.<br>
+      참여해 주셔서 감사합니다.
+    </div>
+
+    <div class="result-summary">
+      <h3>내 선택 요약</h3>
+      <div class="pref-bar" id="pref-bar">
+        <div class="pref-bar-A" id="bar-A" style="flex:1;">A</div>
+        <div class="pref-bar-eq" id="bar-eq" style="flex:0;">≈</div>
+        <div class="pref-bar-B" id="bar-B" style="flex:0;">B</div>
+      </div>
+      <div class="pref-legend">
+        <span>🔵 A 선호: <strong id="cnt-A">0</strong>회</span>
+        <span>≈ 비슷: <strong id="cnt-eq">0</strong>회</span>
+        <span>🟡 B 선호: <strong id="cnt-B">0</strong>회</span>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="location.reload()">처음으로</button>
+      <a href="/results.html" class="btn btn-primary" target="_blank">📊 전체 결과 보기</a>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══ 상태 ══════════════════════════════════════════════════════════
+const state = {
+  participantId: new URLSearchParams(location.search).get('pid') || 'CP_' + Date.now(),
+  demographics: JSON.parse(sessionStorage.getItem('demographics') || '{}'),
+  pairs: [],
+  currentIdx: 0,
+  choices: {},       // pairId → { preference, comment }
+  played: { A: false, B: false }
+};
+
+// ══ 화면 전환 ════════════════════════════════════════════════════
+function goTo(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ══ 시작 ════════════════════════════════════════════════════════
+async function startComparison() {
+  try {
+    const res = await fetch('/api/pairs');
+    state.pairs = await res.json();
+    document.getElementById('pair-total').textContent = state.pairs.length;
+    state.currentIdx = 0;
+    loadPair(0);
+    goTo('screen-compare');
+  } catch (e) {
+    alert('데이터 로드 실패: ' + e.message);
+  }
+}
+
+// ══ 쌍 로드 ══════════════════════════════════════════════════════
+function loadPair(idx) {
+  const pair = state.pairs[idx];
+  if (!pair) return;
+
+  state.played = { A: false, B: false };
+
+  // 진행바
+  document.getElementById('prog-bar').style.width = (idx / state.pairs.length * 100) + '%';
+  document.getElementById('pair-current').textContent = idx + 1;
+
+  // 메타 정보
+  const catKo = { vegetation: '식생', vehicle: '차량', human: '인간' };
+  document.getElementById('chip-loc').textContent = '📍 ' + pair.stimA.location;
+  document.getElementById('chip-cat').textContent = '🌿 ' + (catKo[pair.stimA.category] || pair.stimA.category);
+
+  // 비율 배지
+  document.getElementById('ratio-A').textContent = pair.stimA.ratio + '%';
+  document.getElementById('ratio-B').textContent = pair.stimB.ratio + '%';
+  document.getElementById('sub-A').textContent = '비율 ' + pair.stimA.ratio + '%';
+  document.getElementById('sub-B').textContent = '비율 ' + pair.stimB.ratio + '%';
+
+  // 이미지
+  loadImage('A', pair.stimA);
+  loadImage('B', pair.stimB);
+
+  // 오디오
+  loadAudio('A', pair.stimA);
+  loadAudio('B', pair.stimB);
+
+  // 이전 선택 복원
+  const prev = state.choices[pair.pairId];
+  ['A','B','eq'].forEach(k => document.getElementById('btn-' + k).classList.remove('selected'));
+  document.getElementById('comment-input').value = '';
+  if (prev) {
+    const btnKey = prev.preference === 'A' ? 'A' : prev.preference === 'B' ? 'B' : 'eq';
+    document.getElementById('btn-' + btnKey).classList.add('selected');
+    document.getElementById('comment-input').value = prev.comment || '';
+    // 이미 선택한 경우 played로 표시
+    state.played = { A: true, B: true };
+  }
+
+  // 카드 하이라이트 초기화
+  ['A','B'].forEach(k => {
+    document.getElementById('card-' + k).classList.remove('selected-A', 'selected-B');
+  });
+  if (prev) highlightCard(prev.preference);
+
+  // 버튼 상태
+  document.getElementById('btn-prev').style.visibility = idx === 0 ? 'hidden' : 'visible';
+  document.getElementById('btn-next').textContent =
+    idx === state.pairs.length - 1 ? '제출 완료 ✓' : '다음 →';
+}
+
+function loadImage(side, stim) {
+  const img = document.getElementById('img-' + side);
+  const ph  = document.getElementById('placeholder-' + side);
+  if (stim.imageFile && !stim.demo) {
+    img.src = '/stimuli/images/' + stim.imageFile;
+    img.style.display = 'block';
+    ph.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    ph.style.display = 'flex';
+    ph.innerHTML = `<span style="font-size:2rem">🖼️</span><span>[데모] ${stim.id}</span>`;
+  }
+}
+
+function loadAudio(side, stim) {
+  const audio  = document.getElementById('audio-' + side);
+  const prog   = document.getElementById('prog-' + side);
+  const timeEl = document.getElementById('time-' + side);
+  const playBtn= document.getElementById('play-' + side);
+  const label  = document.getElementById('label-' + side);
+
+  audio.pause();
+  playBtn.textContent = '▶';
+  playBtn.classList.remove('playing');
+  prog.style.width = '0%';
+  timeEl.textContent = '0:00';
+
+  if (!stim.soundFile || stim.demo) {
+    label.textContent = '[데모] 음원 없음';
+    audio.src = '';
+    state.played[side] = true;
+    return;
+  }
+
+  label.textContent = stim.id + ' 음원';
+  audio.src = '/stimuli/sounds/' + stim.soundFile;
+  audio.load();
+
+  audio.ontimeupdate = () => {
+    if (!audio.duration) return;
+    prog.style.width = (audio.currentTime / audio.duration * 100) + '%';
+    const m = Math.floor(audio.currentTime / 60);
+    const s = Math.floor(audio.currentTime % 60).toString().padStart(2,'0');
+    timeEl.textContent = `${m}:${s}`;
+  };
+  audio.onplay = () => {
+    playBtn.textContent = '⏸';
+    playBtn.classList.add('playing');
+    state.played[side] = true;
+    document.getElementById('hint-' + side).style.display = 'none';
+  };
+  audio.onpause = () => {
+    playBtn.textContent = '▶';
+    playBtn.classList.remove('playing');
+  };
+  audio.onended = () => {
+    playBtn.textContent = '▶';
+    playBtn.classList.remove('playing');
+    prog.style.width = '100%';
+  };
+}
+
+function toggleMini(side) {
+  // 반대쪽 멈추기 (동시 재생 방지)
+  const other = side === 'A' ? 'B' : 'A';
+  document.getElementById('audio-' + other).pause();
+
+  const audio = document.getElementById('audio-' + side);
+  if (audio.paused) audio.play().catch(() => {});
+  else audio.pause();
+}
+
+// ══ 선택 ══════════════════════════════════════════════════════════
+function choose(pref) {
+  // 데모 모드 아닐 때만 재생 체크
+  const pair = state.pairs[state.currentIdx];
+  const isDemo = pair.stimA.demo && pair.stimB.demo;
+  if (!isDemo && (!state.played.A || !state.played.B)) {
+    const warnEl = document.getElementById('warn-msg');
+    warnEl.style.display = 'block';
+    if (!state.played.A) document.getElementById('hint-A').style.display = 'block';
+    if (!state.played.B) document.getElementById('hint-B').style.display = 'block';
+    setTimeout(() => { warnEl.style.display = 'none'; }, 3000);
+    return;
+  }
+
+  // 선택 저장
+  state.choices[pair.pairId] = {
+    preference: pref,
+    comment: document.getElementById('comment-input').value
+  };
+
+  // UI 업데이트
+  ['A','B','eq'].forEach(k => document.getElementById('btn-' + k).classList.remove('selected'));
+  const btnKey = pref === 'A' ? 'A' : pref === 'B' ? 'B' : 'eq';
+  document.getElementById('btn-' + btnKey).classList.add('selected');
+  highlightCard(pref);
+}
+
+function highlightCard(pref) {
+  document.getElementById('card-A').classList.remove('selected-A','selected-B');
+  document.getElementById('card-B').classList.remove('selected-A','selected-B');
+  if (pref === 'A') {
+    document.getElementById('card-A').classList.add('selected-A');
+  } else if (pref === 'B') {
+    document.getElementById('card-B').classList.add('selected-B');
+  }
+}
+
+// ══ 네비게이션 ═══════════════════════════════════════════════════
+function nextPair() {
+  const pair = state.pairs[state.currentIdx];
+  // 선택 없으면 경고
+  if (!state.choices[pair.pairId]) {
+    const warnEl = document.getElementById('warn-msg');
+    warnEl.textContent = '⚠ 선택 후 다음으로 넘어갈 수 있습니다.';
+    warnEl.style.display = 'block';
+    setTimeout(() => warnEl.style.display = 'none', 3000);
+    return;
+  }
+  // comment 최신화
+  state.choices[pair.pairId].comment = document.getElementById('comment-input').value;
+
+  if (state.currentIdx < state.pairs.length - 1) {
+    state.currentIdx++;
+    loadPair(state.currentIdx);
+  } else {
+    submitAll();
+  }
+}
+
+function prevPair() {
+  if (state.currentIdx > 0) {
+    // comment 최신화
+    const pair = state.pairs[state.currentIdx];
+    if (state.choices[pair.pairId]) {
+      state.choices[pair.pairId].comment = document.getElementById('comment-input').value;
+    }
+    state.currentIdx--;
+    loadPair(state.currentIdx);
+  }
+}
+
+// ══ 제출 ══════════════════════════════════════════════════════════
+const PREF_LABELS = { A: 'A 선호', B: 'B 선호', equal: '비슷함' };
+
+async function submitAll() {
+  document.getElementById('prog-bar').style.width = '100%';
+
+  const payload = state.pairs.map(pair => {
+    const c = state.choices[pair.pairId];
+    if (!c) return null;
+    return {
+      participantId: state.participantId,
+      pairId: pair.pairId,
+      stimA_id: pair.stimA.id,
+      stimB_id: pair.stimB.id,
+      location: pair.stimA.location,
+      category: pair.stimA.category,
+      ratioA: pair.stimA.ratio,
+      ratioB: pair.stimB.ratio,
+      preference: c.preference,
+      preferenceLabel: PREF_LABELS[c.preference] || c.preference,
+      comment: c.comment || '',
+      age: state.demographics.age || '',
+      gender: state.demographics.gender || ''
+    };
+  }).filter(Boolean);
+
+  try {
+    await Promise.all(payload.map(r =>
+      fetch('/api/comparisons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(r)
+      })
+    ));
+    showComplete(payload);
+  } catch (e) {
+    alert('저장 오류: ' + e.message);
+  }
+}
+
+function showComplete(payload) {
+  document.getElementById('done-total').textContent = payload.length;
+
+  const cntA  = payload.filter(r => r.preference === 'A').length;
+  const cntB  = payload.filter(r => r.preference === 'B').length;
+  const cntEq = payload.filter(r => r.preference === 'equal').length;
+  const total = payload.length;
+
+  document.getElementById('cnt-A').textContent  = cntA;
+  document.getElementById('cnt-B').textContent  = cntB;
+  document.getElementById('cnt-eq').textContent = cntEq;
+
+  // 비율 바
+  document.getElementById('bar-A').style.flex  = cntA  || 0.01;
+  document.getElementById('bar-B').style.flex  = cntB  || 0.01;
+  document.getElementById('bar-eq').style.flex = cntEq || 0.01;
+  document.getElementById('bar-A').textContent  = cntA  > 0 ? `A ${Math.round(cntA/total*100)}%` : '';
+  document.getElementById('bar-B').textContent  = cntB  > 0 ? `B ${Math.round(cntB/total*100)}%` : '';
+  document.getElementById('bar-eq').textContent = cntEq > 0 ? `≈ ${Math.round(cntEq/total*100)}%` : '';
+
+  goTo('screen-complete');
+}
+</script>
+</body>
+</html>

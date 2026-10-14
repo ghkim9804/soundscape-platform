@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISO PE 결과 — 음환경 평가 플랫폼</title>
+<style>
+:root {
+  --primary: #2563eb;
+  --secondary: #10b981;
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --text: #1e293b;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --radius: 12px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Pretendard', 'Noto Sans KR', -apple-system, sans-serif;
+  background: var(--bg); color: var(--text);
+}
+
+/* ── 레이아웃 ── */
+header {
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 16px 24px; display: flex; align-items: center;
+  justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+header h1 { font-size: 1.2rem; font-weight: 800; }
+header .sub { font-size: 13px; color: var(--muted); }
+
+.main { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
+.grid { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+/* ── 카드 ── */
+.card {
+  background: var(--card); border-radius: var(--radius);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+.card-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  font-weight: 700; font-size: 15px; display: flex;
+  align-items: center; gap: 8px;
+}
+.card-body { padding: 20px; }
+
+/* ── 필터 패널 ── */
+.filter-section { margin-bottom: 20px; }
+.filter-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+.chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 500;
+  border: 1.5px solid var(--border); background: #fff; cursor: pointer;
+  transition: all .15s; color: var(--muted);
+}
+.chip.active { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
+.chip:hover { border-color: var(--primary); }
+
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat-item {
+  background: #f8fafc; border-radius: 8px; padding: 12px;
+  border: 1px solid var(--border);
+}
+.stat-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.stat-val { font-size: 18px; font-weight: 800; color: var(--primary); }
+
+/* ── ISO PE 차트 ── */
+#pe-chart-wrap {
+  position: relative; width: 100%;
+  padding-top: min(100%, 580px);
+}
+#pe-canvas {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  cursor: crosshair;
+}
+
+/* ── 범례 ── */
+.legend-wrap { padding: 16px 20px; border-top: 1px solid var(--border); }
+.legend-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 10px; }
+.legend-items { display: flex; flex-wrap: wrap; gap: 10px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── 버튼 ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 18px; border: none; border-radius: 8px;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-outline {
+  background: #fff; color: var(--text); border: 1.5px solid var(--border);
+}
+.btn-outline:hover { background: #f1f5f9; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+
+/* ── 응답 테이블 ── */
+.resp-table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { background: #f8fafc; font-weight: 700; color: var(--muted); position: sticky; top: 0; }
+tr:hover td { background: #f0f9ff; }
+
+/* ── 툴팁 ── */
+#tooltip {
+  position: fixed; background: rgba(15,23,42,.9);
+  color: #fff; padding: 10px 14px; border-radius: 8px;
+  font-size: 13px; pointer-events: none; display: none; z-index: 1000;
+  line-height: 1.6; max-width: 220px;
+}
+
+/* ── 상단 메트릭 바 ── */
+.metric-bar {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px; margin-bottom: 20px;
+}
+.metric-card {
+  background: var(--card); border-radius: var(--radius);
+  border: 1px solid var(--border); padding: 16px;
+  text-align: center;
+}
+.metric-card .m-val { font-size: 2rem; font-weight: 800; color: var(--primary); }
+.metric-card .m-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* ── 탭 ── */
+.tab-bar { display: flex; gap: 2px; margin-bottom: 20px; background: var(--border); border-radius: 8px; padding: 3px; }
+.tab-btn {
+  flex: 1; padding: 8px; border: none; background: transparent;
+  border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: all .15s; color: var(--muted);
+}
+.tab-btn.active { background: #fff; color: var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📊 ISO PE 결과 시각화</h1>
+    <div class="sub">음환경 평가 플랫폼 — 충남대학교 HAUA 연구실</div>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a href="/" class="btn btn-outline">← 설문으로</a>
+    <button class="btn btn-primary" onclick="exportCSV()">⬇ CSV 다운로드</button>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- 상단 메트릭 -->
+  <div class="metric-bar" id="metric-bar">
+    <div class="metric-card">
+      <div class="m-val" id="m-total">-</div>
+      <div class="m-label">총 응답 수</div>
+    </div>
+    <div class="metric-card">
+      <div class="m-val" id="m-participants">-</div>
+      <div class="m-label">참여자 수</div>
+    </div>
+    <div class="metric-card">
+      <div class="m-val" id="m-locations">-</div>
+      <div class="m-label">장소 수</div>
+    </div>
+    <div class="metric-card">
+      <div class="m-val" id="m-stimuli">-</div>
+      <div class="m-label">자극 종류</div>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- 왼쪽: 필터 패널 -->
+    <div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">🔍 필터</div>
+        <div class="card-body">
+
+          <div class="filter-section">
+            <div class="filter-label">장소</div>
+            <div class="chip-group" id="filter-location">
+              <div class="chip active" data-val="all" onclick="setFilter('location','all',this)">전체</div>
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-label">카테고리</div>
+            <div class="chip-group" id="filter-category">
+              <div class="chip active" data-val="all" onclick="setFilter('category','all',this)">전체</div>
+              <div class="chip" data-val="vegetation" onclick="setFilter('category','vegetation',this)">식생</div>
+              <div class="chip" data-val="vehicle" onclick="setFilter('category','vehicle',this)">차량</div>
+              <div class="chip" data-val="human" onclick="setFilter('category','human',this)">인간</div>
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-label">비율</div>
+            <div class="chip-group" id="filter-ratio">
+              <div class="chip active" data-val="all" onclick="setFilter('ratio','all',this)">전체</div>
+              <div class="chip" data-val="20" onclick="setFilter('ratio','20',this)">20%</div>
+              <div class="chip" data-val="40" onclick="setFilter('ratio','40',this)">40%</div>
+              <div class="chip" data-val="60" onclick="setFilter('ratio','60',this)">60%</div>
+              <div class="chip" data-val="80" onclick="setFilter('ratio','80',this)">80%</div>
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-label">색상 기준</div>
+            <div class="chip-group" id="color-by">
+              <div class="chip active" data-val="location" onclick="setColorBy('location',this)">장소</div>
+              <div class="chip" data-val="category" onclick="setColorBy('category',this)">카테고리</div>
+              <div class="chip" data-val="ratio" onclick="setColorBy('ratio',this)">비율</div>
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-label">표시 옵션</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+              <input type="checkbox" id="show-mean" checked onchange="renderChart()"> 평균 포인트 표시
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px;">
+              <input type="checkbox" id="show-individual" checked onchange="renderChart()"> 개별 포인트 표시
+            </label>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 통계 요약 -->
+      <div class="card">
+        <div class="card-header">📈 선택 자극 통계</div>
+        <div class="card-body" id="stats-panel">
+          <p style="color:var(--muted);font-size:13px;">포인트를 클릭하면 자극별 통계가 표시됩니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 오른쪽: 차트 + 테이블 -->
+    <div>
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('chart',this)">🌀 ISO PE 차트</button>
+        <button class="tab-btn" onclick="switchTab('table',this)">📋 응답 테이블</button>
+        <button class="tab-btn" onclick="switchTab('compare',this)">🆚 비교 결과</button>
+      </div>
+
+      <div class="tab-content active" id="tab-chart">
+        <div class="card">
+          <div class="card-header">
+            ISO PE Circumplex
+            <span style="font-weight:400;font-size:12px;color:var(--muted);margin-left:8px;">ISO 12913-2 기반</span>
+          </div>
+          <div class="card-body" style="padding:12px;">
+            <div id="pe-chart-wrap">
+              <canvas id="pe-canvas"></canvas>
+            </div>
+          </div>
+          <div class="legend-wrap">
+            <div class="legend-title" id="legend-title">장소별 색상</div>
+            <div class="legend-items" id="legend-items"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 비교 결과 탭 -->
+      <div class="tab-content" id="tab-compare">
+        <div class="card">
+          <div class="card-header">
+            🆚 선호도 비교 결과
+            <button onclick="window.location.href='/api/export/comparisons-csv'" class="btn btn-outline" style="margin-left:auto; padding:6px 14px; font-size:13px;">⬇ CSV</button>
+          </div>
+          <div class="card-body" id="compare-body">
+            <p style="color:var(--muted);font-size:14px;">비교 데이터 로드 중...</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-table">
+        <div class="card">
+          <div class="card-header">응답 데이터</div>
+          <div class="resp-table-wrap">
+            <table id="resp-table">
+              <thead>
+                <tr>
+                  <th>자극 ID</th><th>장소</th><th>카테고리</th><th>비율</th>
+                  <th>P</th><th>E</th>
+                  <th>PAQ r1</th><th>PAQ r2</th><th>PAQ r3</th><th>PAQ r4</th>
+                  <th>만족도</th><th>적합도</th><th>적절성</th><th>AI유사도</th>
+                  <th>성별</th><th>연령대</th><th>시간</th>
+                </tr>
+              </thead>
+              <tbody id="resp-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ══ 색상 팔레트 ═══════════════════════════════════════════════════
+const PALETTES = {
+  location: {
+    L1: '#2563eb', L2: '#10b981', L3: '#f59e0b',
+    L4: '#ef4444', L5: '#8b5cf6', L6: '#06b6d4'
+  },
+  category: {
+    vegetation: '#10b981', vehicle: '#f59e0b', human: '#8b5cf6'
+  },
+  ratio: {
+    '20': '#dbeafe', '40': '#93c5fd', '60': '#3b82f6', '80': '#1d4ed8'
+  }
+};
+
+// ══ 상태 ══════════════════════════════════════════════════════════
+const state = {
+  responses: [],
+  filter: { location: 'all', category: 'all', ratio: 'all' },
+  colorBy: 'location',
+  hovered: null
+};
+
+// ══ ISO PE 좌표 계산 ══════════════════════════════════════════════
+function calcPE(paq) {
+  if (!paq) return { P: 0, E: 0 };
+  const s2o2 = Math.sqrt(2) / 2;
+  const { r1=0, r2=0, r3=0, r4=0 } = paq;
+  const P = (r1 + (r2 + r4) * s2o2) / (2 + 2 * s2o2);
+  const E = (r3 + (r2 - r4) * s2o2) / (2 + 2 * s2o2);
+  return { P: Math.max(-1, Math.min(1, P)), E: Math.max(-1, Math.min(1, E)) };
+}
+
+// ══ 데이터 로드 ═══════════════════════════════════════════════════
+async function loadData() {
+  try {
+    const res = await fetch('/api/responses');
+    const data = await res.json();
+    state.responses = data.responses.map(r => ({
+      ...r,
+      pe: calcPE(r.paq)
+    }));
+    updateMetrics();
+    buildLocationFilters();
+    renderChart();
+    renderTable();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function updateMetrics() {
+  const r = state.responses;
+  const participants = [...new Set(r.map(x => x.participantId))];
+  const locations = [...new Set(r.map(x => x.location))];
+  const stimuli = [...new Set(r.map(x => x.stimulusId))];
+  document.getElementById('m-total').textContent = r.length;
+  document.getElementById('m-participants').textContent = participants.length;
+  document.getElementById('m-locations').textContent = locations.length;
+  document.getElementById('m-stimuli').textContent = stimuli.length;
+}
+
+function buildLocationFilters() {
+  const locations = [...new Set(state.responses.map(r => r.location))].sort();
+  const container = document.getElementById('filter-location');
+  locations.forEach(loc => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.dataset.val = loc;
+    chip.textContent = loc;
+    chip.onclick = () => setFilter('location', loc, chip);
+    container.appendChild(chip);
+  });
+}
+
+// ══ 필터 ══════════════════════════════════════════════════════════
+function setFilter(type, val, el) {
+  state.filter[type] = val;
+  const group = document.getElementById('filter-' + type);
+  group.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderChart();
+  renderTable();
+}
+
+function setColorBy(val, el) {
+  state.colorBy = val;
+  document.getElementById('color-by').querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderChart();
+}
+
+function getFiltered() {
+  return state.responses.filter(r => {
+    if (state.filter.location !== 'all' && r.location !== state.filter.location) return false;
+    if (state.filter.category !== 'all' && r.category !== state.filter.category) return false;
+    if (state.filter.ratio !== 'all' && String(r.ratio) !== state.filter.ratio) return false;
+    return true;
+  });
+}
+
+// ══ ISO PE 차트 ═══════════════════════════════════════════════════
+function renderChart() {
+  const canvas = document.getElementById('pe-canvas');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('pe-chart-wrap');
+
+  // HiDPI
+  const dpr = window.devicePixelRatio || 1;
+  const W = wrap.offsetWidth;
+  const H = wrap.offsetHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(dpr, dpr);
+
+  const pad = 60;
+  const cx = W / 2, cy = H / 2;
+  const r = Math.min(W, H) / 2 - pad;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // 배경
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── 원형 배경 ──────────────────────────────────────────────────
+  // 외원
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 동심원 (0.5, 1.0)
+  [0.5, 1.0].forEach(frac => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * frac, 0, Math.PI * 2);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = frac === 1 ? 1.5 : 1;
+    ctx.setLineDash(frac === 0.5 ? [4, 4] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  // 축선
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.5;
+  [[cx - r, cy, cx + r, cy], [cx, cy - r, cx, cy + r]].forEach(([x1, y1, x2, y2]) => {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.stroke();
+  });
+
+  // 45도 대각선
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 5]);
+  const d = r * Math.cos(Math.PI / 4);
+  [[cx-d, cy-d, cx+d, cy+d], [cx-d, cy+d, cx+d, cy-d]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // ── ISO PE 8방향 레이블 ─────────────────────────────────────────
+  const PAQ_LABELS = [
+    { angle: 0,   text: 'Pleasant\n쾌적한',    color: '#2563eb' },
+    { angle: 45,  text: 'Vibrant\n활기찬',     color: '#10b981' },
+    { angle: 90,  text: 'Eventful\n활동적인',  color: '#f59e0b' },
+    { angle: 135, text: 'Chaotic\n혼잡한',     color: '#ef4444' },
+    { angle: 180, text: 'Annoying\n불쾌한',    color: '#dc2626' },
+    { angle: 225, text: 'Monotonous\n단조로운',color: '#64748b' },
+    { angle: 270, text: 'Uneventful\n정적인',  color: '#64748b' },
+    { angle: 315, text: 'Calm\n고요한',        color: '#8b5cf6' }
+  ];
+
+  ctx.textAlign = 'center';
+  PAQ_LABELS.forEach(lbl => {
+    const rad = (lbl.angle - 90) * Math.PI / 180;
+    const lx = cx + Math.cos(rad) * (r + 38);
+    const ly = cy + Math.sin(rad) * (r + 38);
+
+    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.fillStyle = lbl.color;
+    const lines = lbl.text.split('\n');
+    lines.forEach((line, i) => {
+      ctx.fillText(line, lx, ly + i * 14 - (lines.length - 1) * 7);
+    });
+  });
+
+  // ── 축 레이블 ─────────────────────────────────────────────────
+  ctx.font = '700 13px system-ui, sans-serif';
+  ctx.fillStyle = '#475569';
+  ctx.fillText('← Annoying   Pleasantness   Pleasant →', cx, cy + r + 50);
+  ctx.save(); ctx.translate(cx - r - 50, cy); ctx.rotate(-Math.PI/2);
+  ctx.fillText('← Uneventful   Eventfulness   Eventful →', 0, 0);
+  ctx.restore();
+
+  // ── 원점 ─────────────────────────────────────────────────────
+  ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI*2);
+  ctx.fillStyle = '#94a3b8'; ctx.fill();
+
+  // ── 데이터 포인트 ─────────────────────────────────────────────
+  const filtered = getFiltered();
+  const showInd = document.getElementById('show-individual').checked;
+  const showMean = document.getElementById('show-mean').checked;
+
+  const palette = PALETTES[state.colorBy];
+
+  // 개별 포인트
+  if (showInd) {
+    filtered.forEach(resp => {
+      const key = resp[state.colorBy] || (state.colorBy === 'ratio' ? String(resp.ratio) : '');
+      const color = palette[key] || '#94a3b8';
+      const px = cx + resp.pe.P * r;
+      const py = cy - resp.pe.E * r;
+
+      ctx.beginPath();
+      ctx.arc(px, py, 5, 0, Math.PI * 2);
+      ctx.fillStyle = color + 'aa';
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  }
+
+  // 자극별 평균 포인트
+  if (showMean) {
+    const groups = {};
+    filtered.forEach(r => {
+      if (!groups[r.stimulusId]) groups[r.stimulusId] = [];
+      groups[r.stimulusId].push(r);
+    });
+
+    Object.entries(groups).forEach(([sid, resps]) => {
+      const meanP = resps.reduce((s, r) => s + r.pe.P, 0) / resps.length;
+      const meanE = resps.reduce((s, r) => s + r.pe.E, 0) / resps.length;
+      const firstResp = resps[0];
+      const key = firstResp[state.colorBy] || (state.colorBy === 'ratio' ? String(firstResp.ratio) : '');
+      const color = palette[key] || '#94a3b8';
+
+      const px = cx + meanP * r;
+      const py = cy - meanE * r;
+
+      // 큰 원
+      ctx.beginPath();
+      ctx.arc(px, py, 9, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // 레이블
+      ctx.font = '700 9px system-ui, sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.fillText(sid.replace(/^L/, ''), px, py + 3.5);
+    });
+  }
+
+  // ── 범례 ─────────────────────────────────────────────────────
+  updateLegend(palette);
+
+  // 마우스 툴팁 데이터 저장 (글로벌)
+  window.__chartData = { filtered, cx, cy, r };
+}
+
+function updateLegend(palette) {
+  const keys = Object.keys(palette);
+  const container = document.getElementById('legend-items');
+  const titles = {
+    location: '장소별',
+    category: { vegetation: '식생', vehicle: '차량', human: '인간' },
+    ratio: { '20': '20%', '40': '40%', '60': '60%', '80': '80%' }
+  };
+  document.getElementById('legend-title').textContent = {
+    location: '장소별 색상', category: '카테고리별 색상', ratio: '비율별 색상'
+  }[state.colorBy] || '';
+
+  container.innerHTML = keys.map(k => {
+    const label = state.colorBy === 'category' ? (titles.category[k] || k) :
+                  state.colorBy === 'ratio' ? (titles.ratio[k] || k + '%') : k;
+    return `<div class="legend-item">
+      <div class="legend-dot" style="background:${palette[k]}"></div>
+      <span>${label}</span>
+    </div>`;
+  }).join('');
+}
+
+// ══ 마우스 툴팁 ══════════════════════════════════════════════════
+document.getElementById('pe-canvas').addEventListener('mousemove', (e) => {
+  const d = window.__chartData;
+  if (!d) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const tip = document.getElementById('tooltip');
+
+  const RADIUS = 12;
+  let found = null;
+
+  // 자극 평균 포인트 충돌 검사
+  const groups = {};
+  d.filtered.forEach(r => {
+    if (!groups[r.stimulusId]) groups[r.stimulusId] = [];
+    groups[r.stimulusId].push(r);
+  });
+
+  Object.entries(groups).forEach(([sid, resps]) => {
+    const mP = resps.reduce((s, r) => s + r.pe.P, 0) / resps.length;
+    const mE = resps.reduce((s, r) => s + r.pe.E, 0) / resps.length;
+    const px = d.cx + mP * d.r;
+    const py = d.cy - mE * d.r;
+    const dist = Math.hypot(mx - px, my - py);
+    if (dist < RADIUS) {
+      found = { sid, resps, P: mP, E: mE };
+    }
+  });
+
+  if (found) {
+    const s = found.resps[0];
+    const catKo = { vegetation: '식생', vehicle: '차량', human: '인간' };
+    const meanSat = (found.resps.reduce((s, r) => s + (r.satisfaction||0), 0) / found.resps.length).toFixed(2);
+    const meanAI = (found.resps.reduce((s, r) => s + (r.aiLikeness||0), 0) / found.resps.length).toFixed(2);
+    tip.innerHTML = `
+      <b>${found.sid}</b><br>
+      장소: ${s.location} / ${catKo[s.category]||s.category} / ${s.ratio}%<br>
+      응답수: ${found.resps.length}<br>
+      P = ${found.P.toFixed(3)}, E = ${found.E.toFixed(3)}<br>
+      평균 만족도: ${meanSat}/5<br>
+      평균 AI유사도: ${meanAI}/5
+    `;
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top = (e.clientY - 10) + 'px';
+
+    // 클릭 시 통계 패널 업데이트
+    e.currentTarget.onclick = () => showStimStats(found.sid, found.resps);
+  } else {
+    tip.style.display = 'none';
+    e.currentTarget.onclick = null;
+  }
+});
+
+document.getElementById('pe-canvas').addEventListener('mouseleave', () => {
+  document.getElementById('tooltip').style.display = 'none';
+});
+
+function showStimStats(sid, resps) {
+  const panel = document.getElementById('stats-panel');
+  const mP = resps.reduce((s, r) => s + r.pe.P, 0) / resps.length;
+  const mE = resps.reduce((s, r) => s + r.pe.E, 0) / resps.length;
+  const avg = (key) => {
+    const vals = resps.map(r => r[key]).filter(v => v != null);
+    return vals.length ? (vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2) : '-';
+  };
+  panel.innerHTML = `
+    <p style="font-weight:700;margin-bottom:12px;">📌 ${sid}</p>
+    <div class="stat-grid">
+      <div class="stat-item"><div class="stat-label">응답 수</div><div class="stat-val">${resps.length}</div></div>
+      <div class="stat-item"><div class="stat-label">평균 P (쾌적성)</div><div class="stat-val">${mP.toFixed(3)}</div></div>
+      <div class="stat-item"><div class="stat-label">평균 E (활동성)</div><div class="stat-val">${mE.toFixed(3)}</div></div>
+      <div class="stat-item"><div class="stat-label">만족도</div><div class="stat-val">${avg('satisfaction')}</div></div>
+      <div class="stat-item"><div class="stat-label">적합도</div><div class="stat-val">${avg('suitability')}</div></div>
+      <div class="stat-item"><div class="stat-label">적절성</div><div class="stat-val">${avg('appropriateness')}</div></div>
+      <div class="stat-item" style="grid-column:span 2;"><div class="stat-label">AI 유사도</div><div class="stat-val">${avg('aiLikeness')}</div></div>
+    </div>
+  `;
+}
+
+// ══ 테이블 ════════════════════════════════════════════════════════
+function renderTable() {
+  const tbody = document.getElementById('resp-tbody');
+  const catKo = { vegetation: '식생', vehicle: '차량', human: '인간' };
+  const filtered = getFiltered();
+  tbody.innerHTML = filtered.map(r => `
+    <tr>
+      <td>${r.stimulusId}</td>
+      <td>${r.location}</td>
+      <td>${catKo[r.category]||r.category}</td>
+      <td>${r.ratio}%</td>
+      <td>${r.pe.P.toFixed(3)}</td>
+      <td>${r.pe.E.toFixed(3)}</td>
+      <td>${r.paq?.r1 ?? '-'}</td>
+      <td>${r.paq?.r2 ?? '-'}</td>
+      <td>${r.paq?.r3 ?? '-'}</td>
+      <td>${r.paq?.r4 ?? '-'}</td>
+      <td>${r.satisfaction ?? '-'}</td>
+      <td>${r.suitability ?? '-'}</td>
+      <td>${r.appropriateness ?? '-'}</td>
+      <td>${r.aiLikeness ?? '-'}</td>
+      <td>${r.gender ?? '-'}</td>
+      <td>${r.age ?? '-'}</td>
+      <td>${new Date(r.timestamp).toLocaleString('ko-KR')}</td>
+    </tr>
+  `).join('');
+}
+
+// ══ 탭 ════════════════════════════════════════════════════════════
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'chart') setTimeout(renderChart, 50);
+}
+
+// ══ CSV 내보내기 ══════════════════════════════════════════════════
+function exportCSV() {
+  window.location.href = '/api/export/csv';
+}
+
+// ══ 리사이즈 대응 ════════════════════════════════════════════════
+window.addEventListener('resize', () => renderChart());
+
+// ══ 비교 결과 로드 ═══════════════════════════════════════════════
+async function loadCompareData() {
+  try {
+    const res = await fetch('/api/comparisons');
+    const data = await res.json();
+    renderCompareResults(data.comparisons || []);
+  } catch {}
+}
+
+function renderCompareResults(comps) {
+  const body = document.getElementById('compare-body');
+  if (!comps.length) {
+    body.innerHTML = '<p style="color:var(--muted);font-size:14px;">아직 비교 응답이 없습니다.</p>';
+    return;
+  }
+
+  // 쌍별 집계
+  const pairs = {};
+  comps.forEach(c => {
+    if (!pairs[c.pairId]) pairs[c.pairId] = {
+      pairId: c.pairId, stimA: c.stimA_id, stimB: c.stimB_id,
+      location: c.location, category: c.category,
+      ratioA: c.ratioA, ratioB: c.ratioB,
+      A: 0, B: 0, equal: 0, total: 0
+    };
+    pairs[c.pairId][c.preference]++;
+    pairs[c.pairId].total++;
+  });
+
+  const catKo = { vegetation:'식생', vehicle:'차량', human:'인간' };
+  const rows = Object.values(pairs).sort((a,b) =>
+    a.location.localeCompare(b.location) || a.category.localeCompare(b.category) || a.ratioA - b.ratioA
+  );
+
+  body.innerHTML = `
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">총 ${comps.length}개 응답 / ${rows.length}개 비교쌍</p>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${rows.map(p => {
+        const pA = Math.round(p.A / p.total * 100);
+        const pB = Math.round(p.B / p.total * 100);
+        const pEq = 100 - pA - pB;
+        return `
+        <div style="background:#f8fafc;border-radius:10px;padding:14px 16px;border:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
+            <div style="font-weight:700;font-size:14px;">${p.location} · ${catKo[p.category]||p.category}</div>
+            <div style="display:flex;gap:6px;">
+              <span style="padding:3px 8px;border-radius:6px;background:#eff6ff;color:#2563eb;font-size:12px;font-weight:600;">A: ${p.ratioA}%</span>
+              <span style="padding:3px 8px;border-radius:6px;background:#fef3c7;color:#d97706;font-size:12px;font-weight:600;">B: ${p.ratioB}%</span>
+              <span style="padding:3px 8px;border-radius:6px;background:#f1f5f9;color:#64748b;font-size:12px;">n=${p.total}</span>
+            </div>
+          </div>
+          <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;gap:2px;">
+            <div style="flex:${p.A||0.01};background:#2563eb;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;">${p.A>0?pA+'%':''}</div>
+            <div style="flex:${p.equal||0.01};background:#94a3b8;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;">${p.equal>0?pEq+'%':''}</div>
+            <div style="flex:${p.B||0.01};background:#f59e0b;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;">${p.B>0?pB+'%':''}</div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:5px;">
+            <span>🔵 A(${p.ratioA}%) ${p.A}명</span>
+            <span>≈ ${p.equal}명</span>
+            <span>${p.B}명 B(${p.ratioB}%) 🟡</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+// ══ 탭 전환 (비교 포함) ═══════════════════════════════════════════
+const _switchTab = switchTab;
+
+// ══ 초기화 ════════════════════════════════════════════════════════
+loadData();
+loadCompareData();
+setInterval(() => { loadData(); loadCompareData(); }, 30000);
+</script>
+</body>
+</html>

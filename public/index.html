@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>음환경 평가 플랫폼</title>
+<style>
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --secondary: #10b981;
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --text: #1e293b;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --danger: #ef4444;
+  --radius: 12px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Pretendard', 'Noto Sans KR', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ── 진행바 ── */
+#progress-bar-wrap {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: 4px; background: var(--border);
+}
+#progress-bar {
+  height: 100%; background: var(--primary);
+  transition: width .4s ease;
+  width: 0%;
+}
+
+/* ── 레이아웃 ── */
+.screen {
+  display: none;
+  min-height: 100vh;
+  padding: 60px 20px 40px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.screen.active { display: flex; flex-direction: column; justify-content: center; }
+
+/* ── 카드 ── */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 40px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+/* ── 버튼 ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 32px;
+  border: none; border-radius: 8px;
+  font-size: 16px; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+  text-decoration: none;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+.btn-secondary { background: var(--border); color: var(--text); }
+.btn-secondary:hover { background: #cbd5e1; }
+.btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+/* ── 랜딩 ── */
+#screen-landing h1 {
+  font-size: 2.2rem; font-weight: 800; margin-bottom: 12px;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+#screen-landing p { color: var(--muted); line-height: 1.7; margin-bottom: 8px; }
+.badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+.badge {
+  padding: 4px 12px; border-radius: 999px;
+  background: #eff6ff; color: var(--primary);
+  font-size: 13px; font-weight: 500;
+}
+.info-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 12px; margin: 24px 0;
+}
+.info-item {
+  background: #f8fafc; border-radius: 8px; padding: 14px 16px;
+  border: 1px solid var(--border);
+}
+.info-item .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.info-item .value { font-size: 15px; font-weight: 600; }
+
+/* ── 인구통계 ── */
+.form-group { margin-bottom: 20px; }
+.form-group label {
+  display: block; font-weight: 600; margin-bottom: 8px; font-size: 15px;
+}
+.form-group select, .form-group input {
+  width: 100%; padding: 11px 14px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  font-size: 15px; background: #fff; color: var(--text);
+  transition: border-color .15s;
+}
+.form-group select:focus, .form-group input:focus {
+  outline: none; border-color: var(--primary);
+}
+.radio-group { display: flex; gap: 10px; flex-wrap: wrap; }
+.radio-btn {
+  flex: 1; min-width: 80px;
+  padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 8px;
+  text-align: center; cursor: pointer; font-size: 14px; font-weight: 500;
+  transition: all .15s; background: #fff;
+}
+.radio-btn.selected { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
+
+/* ── 자극 표시 ── */
+#screen-stimulus { gap: 0; }
+.stimulus-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.stimulus-counter {
+  font-size: 14px; color: var(--muted); font-weight: 500;
+}
+.location-badge {
+  padding: 5px 14px; border-radius: 999px;
+  background: var(--primary); color: #fff;
+  font-size: 13px; font-weight: 600;
+}
+.stimulus-media {
+  border-radius: var(--radius); overflow: hidden;
+  border: 2px solid var(--border);
+  margin-bottom: 20px; position: relative;
+  background: #0f172a; isolation: isolate;
+}
+.stimulus-image {
+  width: 100%; height: 300px; object-fit: cover;
+  display: block;
+}
+.stimulus-placeholder {
+  width: 100%; height: 300px;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 12px;
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  color: #64748b;
+}
+.stimulus-placeholder .icon { font-size: 3rem; }
+.stimulus-placeholder .text { font-size: 14px; }
+/* ── 오디오 플레이어 (새 디자인) ── */
+.audio-player-wrap {
+  background: #0f172a;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.audio-main-row {
+  display: flex; align-items: center; gap: 14px;
+}
+.play-btn {
+  width: 54px; height: 54px; border-radius: 50%;
+  background: var(--primary); border: none; cursor: pointer;
+  color: #fff; font-size: 22px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .15s; box-shadow: 0 0 0 6px rgba(37,99,235,0.25);
+}
+.play-btn:hover { background: var(--primary-dark); transform: scale(1.08); }
+.play-btn.playing { background: #10b981; box-shadow: 0 0 0 6px rgba(16,185,129,0.25); }
+.audio-info { flex: 1; }
+.audio-label { color: #e2e8f0; font-size: 14px; font-weight: 600; }
+.audio-hint {
+  font-size: 12px; color: #fbbf24; margin-top: 3px;
+  display: flex; align-items: center; gap: 4px;
+}
+.audio-status-bar {
+  display: flex; align-items: center; gap: 10px;
+}
+.audio-progress-track {
+  flex: 1; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; overflow: hidden;
+}
+.audio-progress-fill {
+  height: 100%; background: var(--primary); border-radius: 2px;
+  transition: width .3s linear; width: 0%;
+}
+.audio-time { color: #64748b; font-size: 11px; font-variant-numeric: tabular-nums; }
+.audio-played-badge {
+  color: #10b981; font-size: 12px; font-weight: 600;
+  display: none;
+}
+
+/* ── 재생 요구 오버레이 ── */
+.play-required-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(2px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; cursor: pointer; transition: opacity .2s;
+  z-index: 5;
+}
+.play-required-overlay:hover { background: rgba(0,0,0,0.65); }
+.overlay-play-icon {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: rgba(37,99,235,0.9);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; box-shadow: 0 0 0 12px rgba(37,99,235,0.25);
+  animation: pulse 1.8s infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 12px rgba(37,99,235,0.25); }
+  50% { box-shadow: 0 0 0 20px rgba(37,99,235,0.1); }
+}
+.overlay-text {
+  color: #fff; font-size: 15px; font-weight: 700;
+  text-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+
+/* ── 카테고리 정보 ── */
+.stimulus-meta {
+  display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.meta-chip {
+  padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 500;
+}
+.chip-location { background: #eff6ff; color: var(--primary); }
+.chip-category { background: #ecfdf5; color: #059669; }
+.chip-ratio { background: #fef3c7; color: #d97706; }
+
+/* ── ISO PAQ ── */
+.section-title {
+  font-size: 16px; font-weight: 700; margin-bottom: 6px;
+}
+.section-desc { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+
+.paq-scale {
+  margin-bottom: 24px;
+  background: #f8fafc; border-radius: 10px; padding: 18px;
+  border: 1.5px solid var(--border);
+}
+.paq-labels {
+  display: flex; justify-content: space-between; margin-bottom: 10px;
+}
+.paq-left { font-size: 14px; font-weight: 600; color: var(--primary); }
+.paq-right { font-size: 14px; font-weight: 600; color: #ef4444; }
+.paq-options {
+  display: flex; gap: 6px; align-items: center;
+}
+.paq-option {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.paq-radio {
+  width: 100%; height: 40px; border: 2px solid var(--border); border-radius: 8px;
+  cursor: pointer; background: #fff; transition: all .15s;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--muted); font-weight: 500;
+}
+.paq-radio:hover { border-color: var(--primary); background: #eff6ff; }
+.paq-radio.selected { border-color: var(--primary); background: var(--primary); color: #fff; }
+.paq-divider {
+  width: 1px; height: 40px; background: var(--border); flex-shrink: 0;
+}
+
+/* ── Likert ── */
+.likert-item {
+  margin-bottom: 20px; background: #f8fafc; border-radius: 10px; padding: 16px;
+  border: 1.5px solid var(--border);
+}
+.likert-question { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.likert-scale {
+  display: flex; gap: 6px;
+}
+.likert-btn {
+  flex: 1; padding: 10px 4px; border: 2px solid var(--border); border-radius: 8px;
+  cursor: pointer; background: #fff; font-size: 12px; font-weight: 500;
+  text-align: center; transition: all .15s; line-height: 1.3;
+  color: var(--muted);
+}
+.likert-btn:hover { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
+.likert-btn.selected { border-color: var(--primary); background: var(--primary); color: #fff; }
+
+/* ── 네비게이션 ── */
+.nav-row {
+  display: flex; gap: 12px; margin-top: 24px; justify-content: space-between;
+  align-items: center;
+}
+.must-listen-warning {
+  color: var(--danger); font-size: 13px; font-weight: 500;
+  display: none;
+}
+
+/* ── 결과 미리보기 ── */
+#screen-complete .card { text-align: center; }
+.complete-icon { font-size: 4rem; margin-bottom: 16px; }
+.complete-title { font-size: 1.5rem; font-weight: 800; margin-bottom: 8px; }
+.complete-sub { color: var(--muted); margin-bottom: 24px; }
+
+/* ── 섹션 구분선 ── */
+.section-divider {
+  height: 1px; background: var(--border); margin: 24px 0;
+}
+
+/* ── 반응형 ── */
+@media (max-width: 600px) {
+  .card { padding: 24px 16px; }
+  .info-grid { grid-template-columns: 1fr; }
+  .stimulus-image { height: 200px; }
+  #screen-landing h1 { font-size: 1.6rem; }
+}
+</style>
+</head>
+<body>
+
+<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+
+<!-- ══ 1. 랜딩 ═══════════════════════════════════════════════════ -->
+<div id="screen-landing" class="screen active">
+  <div class="card">
+    <h1>🎧 음환경 평가 플랫폼</h1>
+    <p>본 연구는 <strong>시각 자극(이미지)과 청각 자극(음원)의 비율</strong>이 변화할 때 사람들이 음환경을 어떻게 지각하는지를 파악하기 위한 것입니다.</p>
+    <p>평가 결과는 음환경 설계 방안 연구에 활용됩니다.</p>
+
+    <div class="badge-row">
+      <span class="badge">🏫 충남대학교 HAUA 연구실</span>
+      <span class="badge">📋 ISO 12913 기반</span>
+      <span class="badge">⏱️ 약 20~30분 소요</span>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="label">평가 장소 수</div>
+        <div class="value" id="info-locations">로드 중...</div>
+      </div>
+      <div class="info-item">
+        <div class="label">자극 쌍 수</div>
+        <div class="value" id="info-stimuli">로드 중...</div>
+      </div>
+      <div class="info-item">
+        <div class="label">카테고리</div>
+        <div class="value">식생 · 차량 · 인간</div>
+      </div>
+      <div class="info-item">
+        <div class="label">비율 단계</div>
+        <div class="value">20% · 40% · 60% · 80%</div>
+      </div>
+    </div>
+
+    <p style="font-size:13px; color:var(--muted); margin-bottom:24px;">
+      ※ 본 연구는 자발적으로 참여하며, 언제든지 중단할 수 있습니다.<br>
+      수집된 정보는 연구 목적으로만 활용되며 익명으로 처리됩니다.
+    </p>
+
+    <button class="btn btn-primary" onclick="goTo('screen-demo')">
+      참여 시작하기 →
+    </button>
+  </div>
+</div>
+
+<!-- ══ 2. 인구통계 ════════════════════════════════════════════════ -->
+<div id="screen-demo" class="screen">
+  <div class="card">
+    <h2 style="margin-bottom:6px;">기본 정보 입력</h2>
+    <p style="color:var(--muted); margin-bottom:24px; font-size:14px;">연구 분석을 위한 기본 정보를 입력해 주세요.</p>
+
+    <div class="form-group">
+      <label>연령대</label>
+      <div class="radio-group" id="age-group">
+        <div class="radio-btn" data-val="10s" onclick="selectRadio('age', this)">10대</div>
+        <div class="radio-btn" data-val="20s" onclick="selectRadio('age', this)">20대</div>
+        <div class="radio-btn" data-val="30s" onclick="selectRadio('age', this)">30대</div>
+        <div class="radio-btn" data-val="40s" onclick="selectRadio('age', this)">40대</div>
+        <div class="radio-btn" data-val="50s" onclick="selectRadio('age', this)">50대 이상</div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>성별</label>
+      <div class="radio-group" id="gender-group">
+        <div class="radio-btn" data-val="male" onclick="selectRadio('gender', this)">남성</div>
+        <div class="radio-btn" data-val="female" onclick="selectRadio('gender', this)">여성</div>
+        <div class="radio-btn" data-val="other" onclick="selectRadio('gender', this)">기타</div>
+        <div class="radio-btn" data-val="none" onclick="selectRadio('gender', this)">응답 안 함</div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>음환경 또는 소음 관련 분야 종사 여부</label>
+      <div class="radio-group" id="field-group">
+        <div class="radio-btn" data-val="yes" onclick="selectRadio('field', this)">예</div>
+        <div class="radio-btn" data-val="no" onclick="selectRadio('field', this)">아니오</div>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn btn-secondary" onclick="goTo('screen-landing')">← 이전</button>
+      <button class="btn btn-primary" onclick="goToInstruction()">다음 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 3. 안내 ════════════════════════════════════════════════════ -->
+<div id="screen-instruction" class="screen">
+  <div class="card">
+    <h2 style="margin-bottom:16px;">📌 평가 방법 안내</h2>
+
+    <div style="background:#eff6ff; border-radius:10px; padding:20px; margin-bottom:20px; border-left:4px solid var(--primary);">
+      <p style="font-weight:700; margin-bottom:8px;">자극 제시 방식</p>
+      <p style="font-size:14px; color:var(--text); line-height:1.7;">
+        각 자극은 <strong>이미지와 음원</strong>이 함께 제시됩니다.<br>
+        음원은 자동으로 재생되며, 재청취를 원하시면 재생 버튼을 누르세요.<br>
+        충분히 듣고 나서 아래 문항에 답해 주세요.
+      </p>
+    </div>
+
+    <div style="background:#f0fdf4; border-radius:10px; padding:20px; margin-bottom:20px; border-left:4px solid var(--secondary);">
+      <p style="font-weight:700; margin-bottom:8px;">평가 문항 구성</p>
+      <p style="font-size:14px; line-height:1.7; color:var(--text);">
+        1️⃣ <strong>ISO PAQ</strong> — 음환경의 특성을 양극 척도(5단계)로 평가<br>
+        2️⃣ <strong>만족도 / 적합도 / 적절성</strong> — 해당 음환경에 대한 전반적 평가<br>
+        3️⃣ <strong>AI 생성 유사도</strong> — 음원이 AI가 생성한 것처럼 느껴지는 정도
+      </p>
+    </div>
+
+    <div style="background:#fef9ec; border-radius:10px; padding:16px; margin-bottom:24px; border-left:4px solid #f59e0b;">
+      <p style="font-size:13px; color:#92400e; line-height:1.6;">
+        ⚠️ 이어폰 또는 헤드폰을 착용하고 조용한 환경에서 평가해 주세요.<br>
+        총 <span id="total-count-display">-</span>개의 자극을 평가합니다.
+      </p>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn btn-secondary" onclick="goTo('screen-demo')">← 이전</button>
+      <button class="btn btn-primary" onclick="startSurvey()">평가 시작 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 4. 자극 평가 ═══════════════════════════════════════════════ -->
+<div id="screen-stimulus" class="screen">
+  <div class="card">
+
+    <div class="stimulus-header">
+      <div class="stimulus-counter">
+        자극 <span id="stim-current">1</span> / <span id="stim-total">12</span>
+      </div>
+      <div class="location-badge" id="stim-location-badge">L1</div>
+    </div>
+
+    <!-- 자극 미디어 -->
+    <div class="stimulus-media" id="media-container">
+      <img id="stimulus-image" class="stimulus-image" src="" alt="자극 이미지" style="display:none;">
+      <div id="stimulus-placeholder" class="stimulus-placeholder">
+        <div class="icon">🖼️</div>
+        <div class="text">이미지 파일 미등록 (데모 모드)</div>
+      </div>
+      <!-- 재생 요구 오버레이 (자동재생 차단 시 표시) -->
+      <div class="play-required-overlay" id="play-overlay" onclick="startAudio()" style="display:none;">
+        <div class="overlay-play-icon">▶</div>
+        <div class="overlay-text">클릭하여 음원 재생</div>
+      </div>
+
+      <div class="audio-player-wrap">
+        <audio id="audio-player" preload="auto"></audio>
+        <div class="audio-main-row">
+          <button class="play-btn" id="play-btn" onclick="togglePlay()">▶</button>
+          <div class="audio-info">
+            <div class="audio-label" id="audio-label">음원 로드 중...</div>
+            <div class="audio-hint" id="audio-hint" style="display:none;">
+              ⚠️ 재생 버튼을 눌러 음원을 들어주세요
+            </div>
+          </div>
+          <div class="audio-played-badge" id="audio-played-badge">✓ 재생됨</div>
+        </div>
+        <div class="audio-status-bar">
+          <div class="audio-progress-track">
+            <div class="audio-progress-fill" id="audio-progress"></div>
+          </div>
+          <div class="audio-time" id="audio-time">0:00</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stimulus-meta">
+      <span class="meta-chip chip-location" id="chip-location">-</span>
+      <span class="meta-chip chip-category" id="chip-category">-</span>
+      <span class="meta-chip chip-ratio" id="chip-ratio">-</span>
+    </div>
+
+    <!-- ISO PAQ -->
+    <div class="section-title">🔵 ISO PAQ (지각적 음질 평가)</div>
+    <div class="section-desc">아래 각 척도에서 현재 음환경이 왼쪽/오른쪽 어느 쪽에 가까운지 선택하세요.</div>
+
+    <div id="paq-scales">
+      <!-- 동적 생성 -->
+    </div>
+
+    <div class="section-divider"></div>
+
+    <!-- 추가 문항 -->
+    <div class="section-title">🟢 종합 평가</div>
+    <div class="section-desc">아래 각 항목에 대해 해당하는 정도를 선택하세요.</div>
+
+    <div id="likert-scales">
+      <!-- 동적 생성 -->
+    </div>
+
+    <div class="must-listen-warning" id="warning-msg">
+      ⚠️ 모든 문항에 응답해야 다음으로 넘어갈 수 있습니다.
+    </div>
+
+    <div class="nav-row">
+      <button class="btn btn-secondary" id="btn-prev" onclick="prevStimulus()">← 이전</button>
+      <button class="btn btn-primary" id="btn-next" onclick="nextStimulus()">다음 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 5. 완료 ════════════════════════════════════════════════════ -->
+<div id="screen-complete" class="screen">
+  <div class="card">
+    <div class="complete-icon">🎉</div>
+    <div class="complete-title">평가 완료!</div>
+    <div class="complete-sub">참여해 주셔서 감사합니다.<br>귀하의 응답이 성공적으로 저장되었습니다.</div>
+
+    <div id="my-pe-preview" style="margin: 24px 0;"></div>
+
+    <div style="margin:20px 0; padding:20px; background:#eff6ff; border-radius:12px; border:2px solid var(--primary);">
+      <p style="font-weight:700; margin-bottom:8px;">🆚 선호도 비교 세션도 참여해 주세요!</p>
+      <p style="font-size:13px; color:var(--muted); margin-bottom:14px;">
+        두 자극을 나란히 듣고 "어느 쪽이 더 좋아?" 비교하는 세션입니다. (약 10~15분)
+      </p>
+      <a href="/compare.html" class="btn btn-primary" style="width:100%; justify-content:center;">
+        🆚 비교 세션 시작하기 →
+      </a>
+    </div>
+
+    <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn btn-secondary" onclick="location.reload()">처음으로</button>
+      <a href="/results.html" class="btn btn-primary" target="_blank">📊 전체 결과 보기</a>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══ 상태 ═════════════════════════════════════════════════════════
+const state = {
+  participantId: 'P_' + Date.now(),
+  demographics: { age: '', gender: '', field: '' },
+  stimuli: [],
+  order: [],
+  currentIdx: 0,
+  responses: {},
+  audioPlayed: false
+};
+
+// ══ PAQ 척도 정의 ═════════════════════════════════════════════════
+const PAQ_SCALES = [
+  { key: 'r1', left: '쾌적한 (Pleasant)', right: '불쾌한 (Annoying)' },
+  { key: 'r2', left: '활기찬 (Vibrant)', right: '단조로운 (Monotonous)' },
+  { key: 'r3', left: '활동적인 (Eventful)', right: '정적인 (Uneventful)' },
+  { key: 'r4', left: '고요한 (Calm)', right: '혼잡한 (Chaotic)' }
+];
+
+const PAQ_OPTIONS = [
+  { val: 2, label: '매우\n그렇다' },
+  { val: 1, label: '그렇다' },
+  { val: 0, label: '중립' },
+  { val: -1, label: '그렇지\n않다' },
+  { val: -2, label: '전혀\n그렇지\n않다' }
+];
+
+// ══ Likert 척도 정의 ══════════════════════════════════════════════
+const LIKERT_ITEMS = [
+  { key: 'satisfaction', label: '이 음환경에 대한 만족도는 어느 정도인가요?' },
+  { key: 'suitability', label: '이 음환경은 해당 장소에 얼마나 적합한가요?' },
+  { key: 'appropriateness', label: '이 음환경의 소리 수준은 얼마나 적절한가요?' },
+  { key: 'aiLikeness', label: '이 음원은 AI가 생성한 것처럼 느껴지는 정도는?' }
+];
+
+const LIKERT_OPTIONS = ['매우 낮음', '낮음', '보통', '높음', '매우 높음'];
+
+// ══ 화면 전환 ════════════════════════════════════════════════════
+function goTo(screenId) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(screenId).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ══ 라디오 선택 ══════════════════════════════════════════════════
+function selectRadio(group, el) {
+  const parent = document.getElementById(group + '-group');
+  parent.querySelectorAll('.radio-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  state.demographics[group] = el.dataset.val;
+}
+
+// ══ 초기 로드 ════════════════════════════════════════════════════
+async function loadStimuli() {
+  try {
+    const res = await fetch('/api/stimuli');
+    state.stimuli = await res.json();
+
+    const locations = [...new Set(state.stimuli.map(s => s.location))];
+    document.getElementById('info-locations').textContent = locations.length + '개 장소';
+    document.getElementById('info-stimuli').textContent = state.stimuli.length + '쌍';
+    document.getElementById('total-count-display').textContent = state.stimuli.length;
+  } catch (e) {
+    console.error('자극 로드 실패:', e);
+  }
+}
+
+// ══ 설문 시작 ════════════════════════════════════════════════════
+function goToInstruction() {
+  goTo('screen-instruction');
+}
+
+function startSurvey() {
+  // 랜덤 순서 생성
+  state.order = [...Array(state.stimuli.length).keys()];
+  for (let i = state.order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [state.order[i], state.order[j]] = [state.order[j], state.order[i]];
+  }
+  state.currentIdx = 0;
+  buildScales();
+  loadStimulus(state.currentIdx);
+  goTo('screen-stimulus');
+}
+
+// ══ 척도 HTML 생성 ═══════════════════════════════════════════════
+function buildScales() {
+  // PAQ
+  const paqContainer = document.getElementById('paq-scales');
+  paqContainer.innerHTML = PAQ_SCALES.map(scale => `
+    <div class="paq-scale" id="paq-${scale.key}">
+      <div class="paq-labels">
+        <span class="paq-left">${scale.left}</span>
+        <span class="paq-right">${scale.right}</span>
+      </div>
+      <div class="paq-options">
+        ${PAQ_OPTIONS.map((opt, i) => `
+          <div class="paq-option">
+            <div class="paq-radio" data-scale="${scale.key}" data-val="${opt.val}"
+              onclick="selectPAQ('${scale.key}', ${opt.val}, this)"
+              title="${opt.label.replace('\n', ' ')}">${i + 1}</div>
+          </div>
+          ${i < PAQ_OPTIONS.length - 1 ? '' : ''}
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  // Likert
+  const likertContainer = document.getElementById('likert-scales');
+  likertContainer.innerHTML = LIKERT_ITEMS.map(item => `
+    <div class="likert-item">
+      <div class="likert-question">${item.label}</div>
+      <div class="likert-scale">
+        ${LIKERT_OPTIONS.map((opt, i) => `
+          <div class="likert-btn" data-key="${item.key}" data-val="${i + 1}"
+            onclick="selectLikert('${item.key}', ${i + 1}, this)">
+            ${opt}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ══ 자극 로드 ════════════════════════════════════════════════════
+function loadStimulus(idx) {
+  const stimIdx = state.order[idx];
+  const stim = state.stimuli[stimIdx];
+  if (!stim) return;
+
+  state.audioPlayed = false;
+  document.getElementById('audio-status').textContent = '';
+
+  // 진행바
+  const progress = ((idx) / state.stimuli.length) * 100;
+  document.getElementById('progress-bar').style.width = progress + '%';
+
+  // 카운터
+  document.getElementById('stim-current').textContent = idx + 1;
+  document.getElementById('stim-total').textContent = state.stimuli.length;
+  document.getElementById('stim-location-badge').textContent = stim.location;
+
+  // 메타 칩
+  const catKo = { vegetation: '식생', vehicle: '차량', human: '인간' };
+  document.getElementById('chip-location').textContent = '📍 ' + stim.location;
+  document.getElementById('chip-category').textContent = '🌿 ' + (catKo[stim.category] || stim.category);
+  document.getElementById('chip-ratio').textContent = '📊 ' + stim.ratio + '%';
+
+  // 이미지
+  const img = document.getElementById('stimulus-image');
+  const placeholder = document.getElementById('stimulus-placeholder');
+  if (stim.imageFile && !stim.demo) {
+    img.src = '/stimuli/images/' + stim.imageFile;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    placeholder.style.display = 'flex';
+    placeholder.innerHTML = `
+      <div class="icon">🖼️</div>
+      <div class="text">[데모] ${stim.id} — 이미지 파일 없음</div>
+    `;
+  }
+
+  // 오디오
+  setupAudio(stim);
+
+  // 이전 응답 복원
+  restoreResponse(stim.id);
+
+  // 버튼 상태
+  document.getElementById('btn-prev').style.visibility = idx === 0 ? 'hidden' : 'visible';
+  document.getElementById('btn-next').textContent =
+    idx === state.stimuli.length - 1 ? '제출 완료 ✓' : '다음 →';
+}
+
+// ══ 오디오 셋업 ══════════════════════════════════════════════════
+function setupAudio(stim) {
+  const audio = document.getElementById('audio-player');
+  const playBtn = document.getElementById('play-btn');
+  const audioLabel = document.getElementById('audio-label');
+  const overlay = document.getElementById('play-overlay');
+  const hint = document.getElementById('audio-hint');
+  const badge = document.getElementById('audio-played-badge');
+  const progress = document.getElementById('audio-progress');
+  const timeEl = document.getElementById('audio-time');
+
+  // 초기화
+  audio.pause();
+  playBtn.textContent = '▶';
+  playBtn.classList.remove('playing');
+  overlay.style.display = 'none';
+  hint.style.display = 'none';
+  badge.style.display = 'none';
+  progress.style.width = '0%';
+  timeEl.textContent = '0:00';
+
+  if (!stim.soundFile || stim.demo) {
+    audioLabel.textContent = '[데모] 음원 파일 없음';
+    audio.src = '';
+    state.audioPlayed = true;
+    badge.textContent = '✓ 데모';
+    badge.style.display = 'block';
+    return;
+  }
+
+  audioLabel.textContent = stim.id + ' 음원';
+  audio.src = '/stimuli/sounds/' + stim.soundFile;
+  audio.load();
+
+  // 이벤트
+  audio.ontimeupdate = () => {
+    if (!audio.duration) return;
+    const pct = (audio.currentTime / audio.duration) * 100;
+    progress.style.width = pct + '%';
+    const m = Math.floor(audio.currentTime / 60);
+    const s = Math.floor(audio.currentTime % 60).toString().padStart(2, '0');
+    timeEl.textContent = `${m}:${s}`;
+  };
+
+  audio.onplay = () => {
+    playBtn.textContent = '⏸';
+    playBtn.classList.add('playing');
+    overlay.style.display = 'none';
+    hint.style.display = 'none';
+    state.audioPlayed = true;
+    badge.textContent = '✓ 재생됨';
+    badge.style.display = 'block';
+  };
+
+  audio.onpause = () => {
+    playBtn.textContent = '▶';
+    playBtn.classList.remove('playing');
+  };
+
+  audio.onended = () => {
+    playBtn.textContent = '▶';
+    playBtn.classList.remove('playing');
+    progress.style.width = '100%';
+    badge.textContent = '✓ 재생 완료';
+    state.audioPlayed = true;
+  };
+
+  audio.onerror = () => {
+    audioLabel.textContent = '⚠️ 음원 파일을 불러올 수 없습니다';
+    state.audioPlayed = true;
+  };
+
+  // 자동재생 시도
+  const tryAutoPlay = () => {
+    audio.play().catch(() => {
+      // 자동재생 차단 → 오버레이 표시
+      overlay.style.display = 'flex';
+      hint.style.display = 'flex';
+    });
+  };
+
+  // 약간의 딜레이 후 시도 (DOM 안정화)
+  setTimeout(tryAutoPlay, 200);
+}
+
+// 오버레이 클릭 or 재생 버튼으로 시작
+function startAudio() {
+  const audio = document.getElementById('audio-player');
+  document.getElementById('play-overlay').style.display = 'none';
+  audio.play().catch(e => console.warn('재생 실패:', e));
+}
+
+function togglePlay() {
+  const audio = document.getElementById('audio-player');
+  if (audio.paused) {
+    audio.play().catch(() => startAudio());
+  } else {
+    audio.pause();
+  }
+}
+
+// ══ 선택 처리 ════════════════════════════════════════════════════
+function selectPAQ(scale, val, el) {
+  document.querySelectorAll(`[data-scale="${scale}"]`).forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  const stimIdx = state.order[state.currentIdx];
+  const stimId = state.stimuli[stimIdx].id;
+  if (!state.responses[stimId]) state.responses[stimId] = { paq: {} };
+  if (!state.responses[stimId].paq) state.responses[stimId].paq = {};
+  state.responses[stimId].paq[scale] = val;
+}
+
+function selectLikert(key, val, el) {
+  document.querySelectorAll(`[data-key="${key}"]`).forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  const stimIdx = state.order[state.currentIdx];
+  const stimId = state.stimuli[stimIdx].id;
+  if (!state.responses[stimId]) state.responses[stimId] = { paq: {} };
+  state.responses[stimId][key] = val;
+}
+
+function restoreResponse(stimId) {
+  const r = state.responses[stimId];
+  // 모든 선택 초기화
+  document.querySelectorAll('.paq-radio.selected').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.likert-btn.selected').forEach(el => el.classList.remove('selected'));
+
+  if (!r) return;
+  if (r.paq) {
+    Object.entries(r.paq).forEach(([scale, val]) => {
+      const el = document.querySelector(`[data-scale="${scale}"][data-val="${val}"]`);
+      if (el) el.classList.add('selected');
+    });
+  }
+  LIKERT_ITEMS.forEach(item => {
+    if (r[item.key] !== undefined) {
+      const el = document.querySelector(`[data-key="${item.key}"][data-val="${r[item.key]}"]`);
+      if (el) el.classList.add('selected');
+    }
+  });
+}
+
+// ══ 유효성 검사 ══════════════════════════════════════════════════
+function validateCurrent() {
+  const stimIdx = state.order[state.currentIdx];
+  const stim = state.stimuli[stimIdx];
+  const r = state.responses[stim.id] || {};
+  const paq = r.paq || {};
+
+  const paqComplete = PAQ_SCALES.every(s => paq[s.key] !== undefined);
+  const likertComplete = LIKERT_ITEMS.every(item => r[item.key] !== undefined);
+
+  return paqComplete && likertComplete;
+}
+
+// ══ 네비게이션 ═══════════════════════════════════════════════════
+function nextStimulus() {
+  if (!validateCurrent()) {
+    const w = document.getElementById('warning-msg');
+    w.style.display = 'block';
+    setTimeout(() => w.style.display = 'none', 3000);
+    return;
+  }
+
+  if (state.currentIdx < state.stimuli.length - 1) {
+    state.currentIdx++;
+    loadStimulus(state.currentIdx);
+    window.scrollTo(0, 0);
+  } else {
+    submitAll();
+  }
+}
+
+function prevStimulus() {
+  if (state.currentIdx > 0) {
+    state.currentIdx--;
+    loadStimulus(state.currentIdx);
+    window.scrollTo(0, 0);
+  }
+}
+
+// ══ 최종 제출 ════════════════════════════════════════════════════
+async function submitAll() {
+  document.getElementById('progress-bar').style.width = '100%';
+
+  const payload = state.stimuli.map((stim, i) => {
+    const r = state.responses[stim.id] || {};
+    return {
+      participantId: state.participantId,
+      stimulusId: stim.id,
+      location: stim.location,
+      category: stim.category,
+      ratio: stim.ratio,
+      paq: r.paq || {},
+      satisfaction: r.satisfaction,
+      suitability: r.suitability,
+      appropriateness: r.appropriateness,
+      aiLikeness: r.aiLikeness,
+      age: state.demographics.age,
+      gender: state.demographics.gender,
+      field: state.demographics.field
+    };
+  }).filter(r => r.stimulusId && (r.paq?.r1 !== undefined));
+
+  try {
+    await Promise.all(payload.map(r =>
+      fetch('/api/responses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(r)
+      })
+    ));
+    goTo('screen-complete');
+  } catch (e) {
+    alert('저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
+  }
+}
+
+// ══ 초기화 ═══════════════════════════════════════════════════════
+loadStimuli();
+</script>
+</body>
+</html>
