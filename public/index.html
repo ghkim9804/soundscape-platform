@@ -622,9 +622,9 @@ function startSurvey() {
     [state.order[i], state.order[j]] = [state.order[j], state.order[i]];
   }
   state.currentIdx = 0;
+  goTo('screen-stimulus');
   buildScales();
   loadStimulus(state.currentIdx);
-  goTo('screen-stimulus');
 }
 
 // ══ 척도 HTML 생성 ═══════════════════════════════════════════════
