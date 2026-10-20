@@ -674,7 +674,8 @@ function loadStimulus(idx) {
   if (!stim) return;
 
   state.audioPlayed = false;
-  document.getElementById('audio-status').textContent = '';
+  const audioStatus = document.getElementById('audio-status');
+  if (audioStatus) audioStatus.textContent = '';
 
   // 진행바
   const progress = ((idx) / state.stimuli.length) * 100;
