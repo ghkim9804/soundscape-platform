@@ -14,7 +14,12 @@ app.use(cors());
 app.use('/stimuli/images', express.static(path.join(__dirname, 'input', 'images')));
 app.use('/stimuli/sounds', express.static(path.join(__dirname, 'input', 'sounds')));
 
-const DATA_FILE = path.join(__dirname, 'data', 'responses.json');
+// Railway 볼륨 마운트 경로 우선, 없으면 로컬 data/ 사용
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const DATA_FILE = path.join(DATA_DIR, 'responses.json');
+const COMP_FILE = path.join(DATA_DIR, 'comparisons.json');
 
 function readData() {
   try {
@@ -28,6 +33,29 @@ function writeData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
+// ── Google Sheets 웹훅 ───────────────────────────────────────────
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyoEvY1ig3xNf5CR1F13yJGYzxkAQzL5Hi7uGE5hB6GYz5pKSN5fD_kQuoyX7hYJoannw/exec';
+
+async function sendToSheets(entry) {
+  try {
+    const https = require('https');
+    const url = new URL(SHEETS_URL);
+    const body = JSON.stringify(entry);
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    };
+    await new Promise((resolve) => {
+      const req = https.request(options, resolve);
+      req.on('error', () => resolve());
+      req.write(body);
+      req.end();
+    });
+  } catch {}
+}
+
 // ── 자극 목록 자동 감지 ──────────────────────────────────────────
 app.get('/api/stimuli', (req, res) => {
   const imagesDir = path.join(__dirname, 'input', 'images');
@@ -37,7 +65,6 @@ app.get('/api/stimuli', (req, res) => {
   const IMAGE_EXTS = /\.(jpg|jpeg|png|webp|gif)$/i;
   const SOUND_EXTS = ['mp3', 'wav', 'ogg', 'm4a'];
 
-  // 파일명 형식: {L1~L6}_{vegetation|vehicle|human}_{20|40|60|80}.ext
   if (fs.existsSync(imagesDir)) {
     const images = fs.readdirSync(imagesDir).filter(f => IMAGE_EXTS.test(f));
 
@@ -63,14 +90,12 @@ app.get('/api/stimuli', (req, res) => {
     });
   }
 
-  // 정렬: 장소 → 카테고리 → 비율
   stimuli.sort((a, b) => {
     if (a.location !== b.location) return a.location.localeCompare(b.location);
     if (a.category !== b.category) return a.category.localeCompare(b.category);
     return a.ratio - b.ratio;
   });
 
-  // 파일 없을 때 데모용 더미 자극 목록 반환
   if (stimuli.length === 0) {
     const locations = ['L1','L2','L3','L4','L5','L6'];
     const categories = ['vegetation','vehicle','human'];
@@ -96,7 +121,7 @@ app.get('/api/stimuli', (req, res) => {
 });
 
 // ── 응답 저장 ────────────────────────────────────────────────────
-app.post('/api/responses', (req, res) => {
+app.post('/api/responses', async (req, res) => {
   const data = readData();
   const entry = {
     ...req.body,
@@ -105,6 +130,7 @@ app.post('/api/responses', (req, res) => {
   };
   data.responses.push(entry);
   writeData(data);
+  sendToSheets(entry); // 구글시트에도 전송 (비동기, 실패해도 무관)
   res.json({ success: true, id: entry.id });
 });
 
@@ -117,7 +143,6 @@ app.get('/api/responses', (req, res) => {
   if (stimulusId) result = result.filter(r => r.stimulusId === stimulusId);
   if (location) result = result.filter(r => r.location === location);
 
-  // ISO PE 좌표 계산하여 반환
   result = result.map(r => ({
     ...r,
     pe: calcPE(r.paq)
@@ -127,11 +152,6 @@ app.get('/api/responses', (req, res) => {
 });
 
 // ── ISO PE 좌표 계산 함수 ─────────────────────────────────────────
-// PAQ 4개 양극 척도 → P, E 좌표 (-1 ~ +1)
-// r1: 쾌적한(+2) ↔ 불쾌한(-2)   → Pleasant axis
-// r2: 활기찬(+2) ↔ 단조로운(-2) → Vibrant axis (45°)
-// r3: 활동적(+2) ↔ 정적인(-2)   → Eventful axis (90°)
-// r4: 고요한(+2) ↔ 혼잡한(-2)   → Calm axis (315°)
 function calcPE(paq) {
   if (!paq) return { P: 0, E: 0 };
   const sqrt2over2 = Math.sqrt(2) / 2;
@@ -181,8 +201,6 @@ app.get('/api/stats', (req, res) => {
 });
 
 // ── 비교 쌍 생성 ──────────────────────────────────────────────────
-// 같은 장소 × 같은 카테고리, 인접 비율끼리 쌍 만들기
-// (20↔40), (40↔60), (60↔80) — 또는 전체 조합
 app.get('/api/pairs', (req, res) => {
   const imagesDir = path.join(__dirname, 'input', 'images');
   const soundsDir = path.join(__dirname, 'input', 'sounds');
@@ -206,7 +224,6 @@ app.get('/api/pairs', (req, res) => {
     });
   }
 
-  // 데모용 더미
   if (stimuli.length === 0) {
     const locations = ['L1','L2','L3','L4','L5','L6'];
     const categories = ['vegetation','vehicle','human'];
@@ -216,7 +233,6 @@ app.get('/api/pairs', (req, res) => {
     })));
   }
 
-  // 같은 location+category 그룹에서 인접 비율 쌍 생성
   const groups = {};
   stimuli.forEach(s => {
     const key = `${s.location}_${s.category}`;
@@ -227,7 +243,6 @@ app.get('/api/pairs', (req, res) => {
   const pairs = [];
   Object.values(groups).forEach(group => {
     group.sort((a, b) => a.ratio - b.ratio);
-    // 인접 쌍: (20,40), (40,60), (60,80)
     for (let i = 0; i < group.length - 1; i++) {
       pairs.push({
         pairId: `${group[i].id}_vs_${group[i+1].id}`,
@@ -237,7 +252,6 @@ app.get('/api/pairs', (req, res) => {
     }
   });
 
-  // 랜덤 셔플
   for (let i = pairs.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
@@ -247,7 +261,6 @@ app.get('/api/pairs', (req, res) => {
 });
 
 // ── 비교 응답 저장 ─────────────────────────────────────────────────
-const COMP_FILE = path.join(__dirname, 'data', 'comparisons.json');
 function readComps() {
   try { return JSON.parse(fs.readFileSync(COMP_FILE, 'utf8')); } catch { return { comparisons: [] }; }
 }
