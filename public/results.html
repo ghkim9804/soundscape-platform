@@ -146,7 +146,12 @@ tr:hover td { background: #f0f9ff; }
     <h1>📊 ISO PE 결과 시각화</h1>
     <div class="sub">음환경 평가 플랫폼 — 충남대학교 HAUA 연구실</div>
   </div>
-  <div style="display:flex; gap:8px;">
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <label class="btn btn-outline" style="cursor:pointer;" title="Google Sheets에서 다운로드한 CSV를 업로드하세요">
+      📂 CSV 업로드
+      <input type="file" id="csv-upload" accept=".csv" style="display:none;" onchange="handleCSVUpload(event)">
+    </label>
+    <span id="csv-badge" style="display:none; font-size:12px; background:#dcfce7; color:#166534; padding:4px 10px; border-radius:999px; font-weight:600;"></span>
     <a href="/" class="btn btn-outline">← 설문으로</a>
     <button class="btn btn-primary" onclick="exportCSV()">⬇ CSV 다운로드</button>
   </div>
@@ -247,6 +252,7 @@ tr:hover td { background: #f0f9ff; }
         <button class="tab-btn active" onclick="switchTab('chart',this)">🌀 ISO PE 차트</button>
         <button class="tab-btn" onclick="switchTab('table',this)">📋 응답 테이블</button>
         <button class="tab-btn" onclick="switchTab('compare',this)">🆚 비교 결과</button>
+        <button class="tab-btn" onclick="switchTab('recommend',this)">💡 개선 추천</button>
       </div>
 
       <div class="tab-content active" id="tab-chart">
@@ -276,6 +282,19 @@ tr:hover td { background: #f0f9ff; }
           </div>
           <div class="card-body" id="compare-body">
             <p style="color:var(--muted);font-size:14px;">비교 데이터 로드 중...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 개선 추천 탭 -->
+      <div class="tab-content" id="tab-recommend">
+        <div class="card">
+          <div class="card-header">
+            💡 장소별 음환경 개선 추천
+            <span style="font-weight:400;font-size:12px;color:var(--muted);margin-left:8px;">ISO PE 분석 기반</span>
+          </div>
+          <div class="card-body" id="recommend-body">
+            <p style="color:var(--muted);font-size:14px;">데이터 로드 중...</p>
           </div>
         </div>
       </div>
@@ -715,6 +734,7 @@ function switchTab(tab, btn) {
   btn.classList.add('active');
   document.getElementById('tab-' + tab).classList.add('active');
   if (tab === 'chart') setTimeout(renderChart, 50);
+  if (tab === 'recommend') renderRecommendations();
 }
 
 // ══ CSV 내보내기 ══════════════════════════════════════════════════
@@ -794,10 +814,296 @@ function renderCompareResults(comps) {
 // ══ 탭 전환 (비교 포함) ═══════════════════════════════════════════
 const _switchTab = switchTab;
 
+// ══ 개선 추천 분석 ════════════════════════════════════════════════
+function renderRecommendations() {
+  const body = document.getElementById('recommend-body');
+  const responses = state.responses;
+  if (!responses.length) {
+    body.innerHTML = '<p style="color:var(--muted);font-size:14px;">응답 데이터가 없습니다.</p>';
+    return;
+  }
+
+  const catKo = { vegetation: '식생(자연음)', vehicle: '차량(교통소음)', human: '인간활동음' };
+  const catIcon = { vegetation: '🌿', vehicle: '🚗', human: '👥' };
+  const catColor = { vegetation: '#10b981', vehicle: '#ef4444', human: '#8b5cf6' };
+
+  // 장소별 → 카테고리별 → 비율별 평균 P, E 계산
+  const byLocation = {};
+  responses.forEach(r => {
+    if (!r.location || !r.category || !r.ratio) return;
+    const loc = r.location;
+    const cat = r.category;
+    const ratio = r.ratio;
+    if (!byLocation[loc]) byLocation[loc] = {};
+    if (!byLocation[loc][cat]) byLocation[loc][cat] = {};
+    if (!byLocation[loc][cat][ratio]) byLocation[loc][cat][ratio] = { P: [], E: [], sat: [] };
+    byLocation[loc][cat][ratio].P.push(r.pe.P);
+    byLocation[loc][cat][ratio].E.push(r.pe.E);
+    if (r.satisfaction != null) byLocation[loc][cat][ratio].sat.push(r.satisfaction);
+  });
+
+  const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+
+  const locations = Object.keys(byLocation).sort();
+  if (!locations.length) {
+    body.innerHTML = '<p style="color:var(--muted);">분석 가능한 데이터가 없습니다.</p>';
+    return;
+  }
+
+  let html = '';
+  locations.forEach(loc => {
+    const catData = byLocation[loc];
+    const categories = Object.keys(catData);
+
+    // 카테고리별 비율 증가에 따른 P 변화 분석
+    const catSummary = categories.map(cat => {
+      const ratios = Object.keys(catData[cat]).map(Number).sort((a, b) => a - b);
+      const points = ratios.map(r => ({
+        ratio: r,
+        P: avg(catData[cat][r].P),
+        E: avg(catData[cat][r].E),
+        sat: avg(catData[cat][r].sat),
+        n: catData[cat][r].P.length
+      }));
+
+      // 비율 증가 시 P 변화 기울기 (선형 회귀)
+      let slope = 0;
+      if (points.length >= 2) {
+        const n = points.length;
+        const sumX = points.reduce((s, p) => s + p.ratio, 0);
+        const sumY = points.reduce((s, p) => s + p.P, 0);
+        const sumXY = points.reduce((s, p) => s + p.ratio * p.P, 0);
+        const sumX2 = points.reduce((s, p) => s + p.ratio * p.ratio, 0);
+        slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+      }
+
+      const bestPoint = points.reduce((best, p) => (!best || p.P > best.P) ? p : best, null);
+      const worstPoint = points.reduce((worst, p) => (!worst || p.P < worst.P) ? p : worst, null);
+
+      return { cat, points, slope, bestPoint, worstPoint };
+    });
+
+    // 가장 쾌적한 카테고리
+    const bestCat = catSummary.reduce((best, c) => {
+      const maxP = c.bestPoint?.P ?? -1;
+      const bestMaxP = best?.bestPoint?.P ?? -1;
+      return maxP > bestMaxP ? c : best;
+    }, null);
+
+    // 가장 부정적인 영향 카테고리 (비율 올릴수록 P 감소)
+    const worstSlope = catSummary.reduce((worst, c) => {
+      return (!worst || c.slope < worst.slope) ? c : worst;
+    }, null);
+
+    // 추천 생성
+    const recommendations = [];
+
+    catSummary.forEach(({ cat, slope, bestPoint, points }) => {
+      if (cat === 'vegetation') {
+        if (slope > 0.002) {
+          recommendations.push({
+            type: 'positive',
+            icon: '🌿',
+            text: `<b>식생 비율을 높이세요.</b> 자연음 비율이 증가할수록 쾌적도(P)가 상승하는 경향이 뚜렷합니다. 최적 비율은 <b>${bestPoint?.ratio}%</b> 수준입니다.`,
+            action: '수목 식재, 수경시설, 자연음 조경 도입 검토'
+          });
+        } else if (slope < -0.002) {
+          recommendations.push({
+            type: 'neutral',
+            icon: '🌿',
+            text: `식생 비율 증가가 이 장소에서는 쾌적도를 크게 높이지 않습니다. 다른 요소 개선을 우선하세요.`,
+            action: '현 식생 수준 유지, 음질 개선에 집중'
+          });
+        }
+      }
+      if (cat === 'vehicle') {
+        if (slope < -0.002) {
+          recommendations.push({
+            type: 'negative',
+            icon: '🚗',
+            text: `<b>차량 소음을 줄이세요.</b> 교통음 비율이 높아질수록 쾌적도(P)가 크게 낮아집니다.`,
+            action: '방음벽 설치, 저소음 포장재, 교통량 우회, 속도 제한'
+          });
+        } else if (slope > 0.002) {
+          recommendations.push({
+            type: 'neutral',
+            icon: '🚗',
+            text: `이 장소는 차량음에 상대적으로 덜 민감합니다.`,
+            action: '현 교통 환경 모니터링 지속'
+          });
+        }
+      }
+      if (cat === 'human') {
+        if (slope > 0.002) {
+          recommendations.push({
+            type: 'positive',
+            icon: '👥',
+            text: `<b>인간 활동음이 활기를 더합니다.</b> 적절한 인간 활동음은 이 장소의 쾌적도와 활동성을 높입니다.`,
+            action: '공공 프로그램, 야외 활동 공간, 커뮤니티 이벤트 유치'
+          });
+        } else if (slope < -0.002) {
+          recommendations.push({
+            type: 'negative',
+            icon: '👥',
+            text: `인간 활동음 증가가 이 장소의 쾌적도를 낮춥니다. 적정 이용 밀도 관리가 필요합니다.`,
+            action: '이용자 분산 설계, 휴식 공간과 활동 공간 구분'
+          });
+        }
+      }
+    });
+
+    if (!recommendations.length) {
+      recommendations.push({
+        type: 'neutral',
+        icon: '📊',
+        text: '데이터가 더 쌓이면 구체적인 추천이 가능합니다.',
+        action: '추가 응답 수집 필요'
+      });
+    }
+
+    const typeColors = { positive: '#dcfce7', negative: '#fee2e2', neutral: '#f1f5f9' };
+    const typeBorder = { positive: '#86efac', negative: '#fca5a5', neutral: '#e2e8f0' };
+    const typeTextColor = { positive: '#166534', negative: '#991b1b', neutral: '#475569' };
+
+    // 카테고리별 P 미니 차트 (바형)
+    const miniCharts = catSummary.map(({ cat, points }) => {
+      const bars = points.map(p => {
+        const pct = Math.round(((p.P + 1) / 2) * 100);
+        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span style="width:28px;font-size:11px;color:var(--muted);">${p.ratio}%</span>
+          <div style="flex:1;background:#e2e8f0;border-radius:4px;height:14px;overflow:hidden;">
+            <div style="width:${pct}%;background:${catColor[cat]};height:100%;border-radius:4px;transition:width .3s;"></div>
+          </div>
+          <span style="width:36px;font-size:11px;font-weight:600;color:${catColor[cat]};">${p.P >= 0 ? '+' : ''}${p.P.toFixed(2)}</span>
+          <span style="font-size:10px;color:var(--muted);">n=${p.n}</span>
+        </div>`;
+      }).join('');
+      return `<div style="margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;color:${catColor[cat]};margin-bottom:6px;">${catIcon[cat]} ${catKo[cat]} — 비율별 쾌적도(P)</div>
+        ${bars}
+      </div>`;
+    }).join('');
+
+    const recCards = recommendations.map(r => `
+      <div style="background:${typeColors[r.type]};border:1px solid ${typeBorder[r.type]};border-radius:10px;padding:14px 16px;margin-bottom:10px;">
+        <div style="font-size:14px;color:${typeTextColor[r.type]};margin-bottom:6px;">${r.icon} ${r.text}</div>
+        <div style="font-size:12px;color:var(--muted);background:rgba(255,255,255,.6);border-radius:6px;padding:6px 10px;">
+          🔧 <b>개선 방향:</b> ${r.action}
+        </div>
+      </div>`).join('');
+
+    html += `
+      <div style="border:1.5px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:24px;">
+        <div style="background:#1e293b;color:#fff;padding:14px 20px;font-size:15px;font-weight:800;">
+          📍 ${loc} — 음환경 개선 분석
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">
+          <div style="padding:20px;border-right:1px solid var(--border);">
+            <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:12px;">비율별 쾌적도 변화</div>
+            ${miniCharts}
+          </div>
+          <div style="padding:20px;">
+            <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:12px;">개선 추천</div>
+            ${recCards}
+          </div>
+        </div>
+      </div>`;
+  });
+
+  body.innerHTML = `
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">
+      ℹ️ 비율이 높아질수록 쾌적도(P)가 오르면 ▲긍정, 내리면 ▼부정으로 해석합니다. ISO 12913-2 기반 분석입니다.
+    </p>
+    ${html}`;
+}
+
+// ══ CSV 업로드 ════════════════════════════════════════════════════
+function handleCSVUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const text = e.target.result.replace(/^﻿/, ''); // BOM 제거
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) { alert('데이터가 없습니다.'); return; }
+
+      const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+      const parsed = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const vals = parseCSVLine(lines[i]);
+        if (vals.length < 5) continue;
+        const row = {};
+        headers.forEach((h, idx) => { row[h] = vals[idx] ?? ''; });
+
+        // 서버 CSV 컬럼명 → 내부 포맷 변환
+        const r1 = parseFloat(row['paq_r1_pleasant_annoying'] ?? row['paq_r1'] ?? 0);
+        const r2 = parseFloat(row['paq_r2_vibrant_monotonous'] ?? row['paq_r2'] ?? 0);
+        const r3 = parseFloat(row['paq_r3_eventful_uneventful'] ?? row['paq_r3'] ?? 0);
+        const r4 = parseFloat(row['paq_r4_calm_chaotic'] ?? row['paq_r4'] ?? 0);
+
+        const entry = {
+          id: row['id'] || i,
+          timestamp: row['timestamp'] || '',
+          participantId: row['participantId'] || '',
+          stimulusId: row['stimulusId'] || '',
+          location: row['location'] || '',
+          category: row['category'] || '',
+          ratio: parseInt(row['ratio']) || 0,
+          paq: { r1, r2, r3, r4 },
+          satisfaction: row['satisfaction'] !== '' ? parseFloat(row['satisfaction']) : null,
+          suitability: row['suitability'] !== '' ? parseFloat(row['suitability']) : null,
+          appropriateness: row['appropriateness'] !== '' ? parseFloat(row['appropriateness']) : null,
+          aiLikeness: row['aiLikeness'] !== '' ? parseFloat(row['aiLikeness']) : null,
+          age: row['age'] || null,
+          gender: row['gender'] || null,
+        };
+        entry.pe = calcPE(entry.paq);
+        if (entry.stimulusId) parsed.push(entry);
+      }
+
+      if (parsed.length === 0) { alert('유효한 데이터를 찾을 수 없습니다.'); return; }
+
+      state.responses = parsed;
+      updateMetrics();
+      buildLocationFilters();
+      renderChart();
+      renderTable();
+
+      const badge = document.getElementById('csv-badge');
+      badge.textContent = `📄 ${file.name} (${parsed.length}행)`;
+      badge.style.display = 'inline-block';
+
+      // 자동 새로고침 중단 (CSV 모드)
+      clearInterval(window.__autoRefresh);
+
+    } catch (err) {
+      alert('CSV 파싱 오류: ' + err.message);
+    }
+    event.target.value = ''; // 같은 파일 재업로드 허용
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQuote = !inQuote; }
+    else if (ch === ',' && !inQuote) { result.push(cur.trim()); cur = ''; }
+    else { cur += ch; }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 // ══ 초기화 ════════════════════════════════════════════════════════
 loadData();
 loadCompareData();
-setInterval(() => { loadData(); loadCompareData(); }, 30000);
+window.__autoRefresh = setInterval(() => { loadData(); loadCompareData(); }, 30000);
 </script>
 </body>
 </html>
