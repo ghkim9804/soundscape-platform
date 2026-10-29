@@ -252,6 +252,7 @@ tr:hover td { background: #f0f9ff; }
         <button class="tab-btn active" onclick="switchTab('chart',this)">🌀 ISO PE 차트</button>
         <button class="tab-btn" onclick="switchTab('table',this)">📋 응답 테이블</button>
         <button class="tab-btn" onclick="switchTab('compare',this)">🆚 비교 결과</button>
+        <button class="tab-btn" onclick="switchTab('density',this)">🌊 밀도 분포</button>
         <button class="tab-btn" onclick="switchTab('recommend',this)">💡 개선 추천</button>
       </div>
 
@@ -282,6 +283,28 @@ tr:hover td { background: #f0f9ff; }
           </div>
           <div class="card-body" id="compare-body">
             <p style="color:var(--muted);font-size:14px;">비교 데이터 로드 중...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 밀도 분포 탭 -->
+      <div class="tab-content" id="tab-density">
+        <div class="card">
+          <div class="card-header">
+            🌊 ISO PE 밀도 분포
+            <span style="font-weight:400;font-size:12px;color:var(--muted);margin-left:8px;">카테고리·비율별 응답 분포 (KDE)</span>
+          </div>
+          <div class="card-body" style="padding:12px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+              <span style="font-size:13px;font-weight:600;color:var(--muted);align-self:center;">색상 기준:</span>
+              <button class="btn btn-outline" id="density-by-cat" onclick="setDensityMode('category')" style="padding:6px 14px;font-size:13px;">카테고리</button>
+              <button class="btn btn-primary" id="density-by-ratio" onclick="setDensityMode('ratio')" style="padding:6px 14px;font-size:13px;">비율</button>
+              <button class="btn btn-outline" id="density-by-loc" onclick="setDensityMode('location')" style="padding:6px 14px;font-size:13px;">장소</button>
+            </div>
+            <div id="density-chart-wrap" style="position:relative;width:100%;padding-top:min(100%,580px);">
+              <canvas id="density-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;"></canvas>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:12px;padding:12px 0 4px;" id="density-legend"></div>
           </div>
         </div>
       </div>
@@ -517,13 +540,6 @@ function renderChart() {
     });
   });
 
-  // ── 축 레이블 ─────────────────────────────────────────────────
-  ctx.font = '700 13px system-ui, sans-serif';
-  ctx.fillStyle = '#475569';
-  ctx.fillText('← Annoying   Pleasantness   Pleasant →', cx, cy + r + 50);
-  ctx.save(); ctx.translate(cx - r - 50, cy); ctx.rotate(-Math.PI/2);
-  ctx.fillText('← Uneventful   Eventfulness   Eventful →', 0, 0);
-  ctx.restore();
 
   // ── 원점 ─────────────────────────────────────────────────────
   ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI*2);
@@ -535,6 +551,10 @@ function renderChart() {
   const showMean = document.getElementById('show-mean').checked;
 
   const palette = PALETTES[state.colorBy];
+
+  // ── 원 안으로 클리핑 ─────────────────────────────────────────
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
 
   // 개별 포인트
   if (showInd) {
@@ -572,22 +592,27 @@ function renderChart() {
       const px = cx + meanP * r;
       const py = cy - meanE * r;
 
-      // 큰 원
+      // 위쪽 방향 삼각형으로 평균 포인트 표시
+      const ts = 10; // 삼각형 크기
       ctx.beginPath();
-      ctx.arc(px, py, 9, 0, Math.PI * 2);
+      ctx.moveTo(px, py - ts);
+      ctx.lineTo(px + ts * 0.866, py + ts * 0.5);
+      ctx.lineTo(px - ts * 0.866, py + ts * 0.5);
+      ctx.closePath();
       ctx.fillStyle = color;
       ctx.fill();
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // 레이블
       ctx.font = '700 9px system-ui, sans-serif';
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
-      ctx.fillText(sid.replace(/^L/, ''), px, py + 3.5);
+      ctx.fillText(sid.replace(/^L/, ''), px, py + 4);
     });
   }
+
+  ctx.restore(); // 클리핑 해제
 
   // ── 범례 ─────────────────────────────────────────────────────
   updateLegend(palette);
@@ -734,6 +759,7 @@ function switchTab(tab, btn) {
   btn.classList.add('active');
   document.getElementById('tab-' + tab).classList.add('active');
   if (tab === 'chart') setTimeout(renderChart, 50);
+  if (tab === 'density') setTimeout(renderDensityChart, 50);
   if (tab === 'recommend') renderRecommendations();
 }
 
@@ -813,6 +839,286 @@ function renderCompareResults(comps) {
 
 // ══ 탭 전환 (비교 포함) ═══════════════════════════════════════════
 const _switchTab = switchTab;
+
+// ══ 밀도 분포 (KDE 타일) ══════════════════════════════════════════
+const PASTEL = {
+  category: { vegetation:'#7dbf7d', vehicle:'#e08080', human:'#9b80cc' },
+  ratio:    { '20':'#a8c8f0', '40':'#84aad8', '60':'#6090c4', '80':'#4878b0' },
+  location: { L1:'#7aaad0', L2:'#7abfa0', L3:'#c8a870', L4:'#c87878', L5:'#9878c8', L6:'#70b8c8' }
+};
+function hexToRgb(hex){return{r:parseInt(hex.slice(1,3),16),g:parseInt(hex.slice(3,5),16),b:parseInt(hex.slice(5,7),16)};}
+
+let densityMode = 'ratio';
+
+function setDensityMode(mode) {
+  densityMode = mode;
+  ['category','ratio','location'].forEach(m => {
+    const btn = document.getElementById('density-by-' + m);
+    if (btn) {
+      btn.className = m === mode ? 'btn btn-primary' : 'btn btn-outline';
+      btn.style.padding = '6px 14px'; btn.style.fontSize = '13px';
+    }
+  });
+  renderDensityChart();
+}
+
+function renderDensityChart() {
+  const canvas = document.getElementById('density-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('density-chart-wrap');
+  const dpr = window.devicePixelRatio || 1;
+  const W = wrap.offsetWidth, H = wrap.offsetHeight;
+  canvas.width = W*dpr; canvas.height = H*dpr;
+  canvas.style.width = W+'px'; canvas.style.height = H+'px';
+  ctx.scale(dpr, dpr);
+
+  const pad=70, cx=W/2, cy=H/2;
+  const r=Math.min(W,H)/2-pad;
+
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#fafaf8'; ctx.fillRect(0,0,W,H);
+
+  // ── 배경 원 ───────────────────────────────────────────────────
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.fillStyle='#fff'; ctx.fill();
+  ctx.strokeStyle='#ddd'; ctx.lineWidth=1.5; ctx.stroke();
+
+  // ── 동심원 ────────────────────────────────────────────────────
+  [0.5,1.0].forEach(f=>{
+    ctx.beginPath(); ctx.arc(cx,cy,r*f,0,Math.PI*2);
+    ctx.strokeStyle='#e8e8e4'; ctx.lineWidth=f===1?1.5:1;
+    ctx.setLineDash(f===0.5?[4,4]:[]); ctx.stroke(); ctx.setLineDash([]);
+  });
+
+  // ── 축선 ──────────────────────────────────────────────────────
+  ctx.strokeStyle='#ddd'; ctx.lineWidth=1;
+  [[cx-r,cy,cx+r,cy],[cx,cy-r,cx,cy+r]].forEach(([x1,y1,x2,y2])=>{
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+
+  // ── 대각선 ────────────────────────────────────────────────────
+  ctx.setLineDash([3,6]); ctx.strokeStyle='#ebe8e4'; ctx.lineWidth=1;
+  const dg=r*Math.cos(Math.PI/4);
+  [[cx-dg,cy-dg,cx+dg,cy+dg],[cx-dg,cy+dg,cx+dg,cy-dg]].forEach(([x1,y1,x2,y2])=>{
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // ── 8방향 레이블 ──────────────────────────────────────────────
+  const LBLS=[
+    {angle:0,  text:'Pleasant\n쾌적한',    color:'#5580b0'},
+    {angle:45, text:'Vibrant\n활기찬',     color:'#5aaa7a'},
+    {angle:90, text:'Eventful\n활동적인',  color:'#b09050'},
+    {angle:135,text:'Chaotic\n혼잡한',     color:'#b06060'},
+    {angle:180,text:'Annoying\n불쾌한',    color:'#a05050'},
+    {angle:225,text:'Monotonous\n단조로운',color:'#909090'},
+    {angle:270,text:'Uneventful\n정적인',  color:'#909090'},
+    {angle:315,text:'Calm\n고요한',        color:'#8070b0'}
+  ];
+  ctx.textAlign='center';
+  LBLS.forEach(lbl=>{
+    const rad=(lbl.angle-90)*Math.PI/180;
+    const lx=cx+Math.cos(rad)*(r+38), ly=cy+Math.sin(rad)*(r+38);
+    ctx.font='500 10px "Pretendard","Noto Sans KR",sans-serif'; ctx.fillStyle=lbl.color;
+    lbl.text.split('\n').forEach((line,i,arr)=>ctx.fillText(line,lx,ly+i*13-(arr.length-1)*6.5));
+  });
+
+  // ── 데이터 그룹화 ─────────────────────────────────────────────
+  const responses = getFiltered();
+  if (!responses.length) return;
+
+  const palette = PASTEL[densityMode];
+  const groups = {};
+  responses.forEach(resp=>{
+    const key=densityMode==='ratio'?String(resp.ratio):resp[densityMode];
+    if (!key) return;
+    if (!groups[key]) groups[key]=[];
+    groups[key].push({P:resp.pe.P, E:resp.pe.E});
+  });
+
+  // ── 스무스 KDE 컨투어 ──────────────────────────────────────────
+  // 각 그룹의 KDE를 오프스크린에 레이어로 쌓고 blur로 부드럽게
+  const GRID = 55;                       // 해상도
+  const cellSize = (2*r) / GRID;
+  const FILL_LEVELS = [0.08,0.18,0.30,0.44,0.60,0.78]; // 채움 임계값 (낮→높)
+  const CONTOUR_LEVELS = [0.28, 0.55, 0.78];           // 컨투어 선 임계값
+
+  // 오프스크린 캔버스 (블러 합성용)
+  const off = document.createElement('canvas');
+  off.width = Math.round(W*dpr); off.height = Math.round(H*dpr);
+  const octx = off.getContext('2d');
+  octx.scale(dpr, dpr);
+
+  // KDE 데이터를 그룹별로 저장
+  const allGrids = {};
+
+  Object.entries(groups).forEach(([key, pts]) => {
+    if (!pts.length) return;
+    const color = palette[key] || '#a0a8b0';
+    const rgb = hexToRgb(color);
+    const bw = Math.max(0.13, 0.52/Math.sqrt(pts.length));
+
+    // KDE 계산
+    const grid = new Float32Array(GRID*GRID);
+    let maxD = 0;
+    for (let gy=0; gy<GRID; gy++) {
+      for (let gx=0; gx<GRID; gx++) {
+        const px = ((gx+0.5)/GRID)*2-1;
+        const py = ((gy+0.5)/GRID)*2-1;
+        if (px*px+py*py > 1.18) continue;
+        let d = 0;
+        pts.forEach(p=>{const dx=(px-p.P)/bw, dy=(py-p.E)/bw; d+=Math.exp(-0.5*(dx*dx+dy*dy));});
+        d /= pts.length;
+        grid[gy*GRID+gx] = d;
+        if (d > maxD) maxD = d;
+      }
+    }
+    allGrids[key] = {grid, maxD, rgb, color, pts};
+    if (!maxD) return;
+
+    // 각 밀도 레벨을 오프스크린에 쌓음 (낮은 레벨부터)
+    FILL_LEVELS.forEach((thresh, li) => {
+      const alpha = 0.05 + li * 0.05; // 0.05 → 0.30 (레이어 누적으로 고밀도 영역이 진해짐)
+      for (let gy=0; gy<GRID; gy++) {
+        for (let gx=0; gx<GRID; gx++) {
+          if (grid[gy*GRID+gx] / maxD < thresh) continue;
+          const px = cx - r + gx*cellSize;
+          const py = cy - r + gy*cellSize;
+          octx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha.toFixed(3)})`;
+          octx.fillRect(px, py, cellSize+0.5, cellSize+0.5);
+        }
+      }
+    });
+  });
+
+  // 오프스크린을 blur 처리하여 메인 캔버스에 합성 (원 안으로 클리핑)
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r-1,0,Math.PI*2); ctx.clip();
+  ctx.filter = 'blur(9px)';
+  ctx.drawImage(off, 0, 0, W, H);
+  ctx.filter = 'none';
+  ctx.restore();
+
+  // ── 컨투어 선 (blur 없이 선명하게) ───────────────────────────
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r-1,0,Math.PI*2); ctx.clip();
+
+  Object.entries(allGrids).forEach(([key, {grid, maxD, rgb}]) => {
+    if (!maxD) return;
+    CONTOUR_LEVELS.forEach((thresh, ti) => {
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${(0.28 + ti*0.16).toFixed(2)})`;
+      ctx.lineWidth = 0.8 + ti*0.35;
+
+      // 간략화된 마칭 스퀘어: 셀 경계에서 등치선 세그먼트 탐색
+      for (let gy=0; gy<GRID-1; gy++) {
+        for (let gx=0; gx<GRID-1; gx++) {
+          const a = grid[gy*GRID+gx]/maxD;         // 좌상
+          const b = grid[gy*GRID+(gx+1)]/maxD;     // 우상
+          const c = grid[(gy+1)*GRID+gx]/maxD;     // 좌하
+          const d2= grid[(gy+1)*GRID+(gx+1)]/maxD; // 우하
+
+          const x0 = cx - r + gx*cellSize;
+          const y0 = cy - r + gy*cellSize;
+          const x1 = x0 + cellSize, y1 = y0 + cellSize;
+
+          // 각 모서리에서 thresh 교차점 계산
+          const edges = [];
+          if ((a<thresh)!==(b<thresh) && Math.abs(b-a)>1e-9)
+            edges.push([x0 + cellSize*(thresh-a)/(b-a), y0]);
+          if ((c<thresh)!==(d2<thresh) && Math.abs(d2-c)>1e-9)
+            edges.push([x0 + cellSize*(thresh-c)/(d2-c), y1]);
+          if ((a<thresh)!==(c<thresh) && Math.abs(c-a)>1e-9)
+            edges.push([x0, y0 + cellSize*(thresh-a)/(c-a)]);
+          if ((b<thresh)!==(d2<thresh) && Math.abs(d2-b)>1e-9)
+            edges.push([x1, y0 + cellSize*(thresh-b)/(d2-b)]);
+
+          if (edges.length >= 2) {
+            ctx.moveTo(edges[0][0], edges[0][1]);
+            ctx.lineTo(edges[1][0], edges[1][1]);
+          }
+          if (edges.length === 4) {
+            ctx.moveTo(edges[2][0], edges[2][1]);
+            ctx.lineTo(edges[3][0], edges[3][1]);
+          }
+        }
+      }
+      ctx.stroke();
+    });
+  });
+
+  ctx.restore();
+
+  // ── 모양 헬퍼 (0:원, 1:네모, 2:위삼각, 3:아래삼각, 4:다이아몬드) ──
+  function drawShapePath(c2, x, y, s, si) {
+    c2.beginPath();
+    switch(si % 5) {
+      case 0: c2.arc(x,y,s,0,Math.PI*2); break;
+      case 1: c2.rect(x-s,y-s,s*2,s*2); break;
+      case 2: c2.moveTo(x,y-s); c2.lineTo(x+s*0.866,y+s*0.5); c2.lineTo(x-s*0.866,y+s*0.5); c2.closePath(); break;
+      case 3: c2.moveTo(x,y+s); c2.lineTo(x+s*0.866,y-s*0.5); c2.lineTo(x-s*0.866,y-s*0.5); c2.closePath(); break;
+      case 4: c2.moveTo(x,y-s); c2.lineTo(x+s,y); c2.lineTo(x,y+s); c2.lineTo(x-s,y); c2.closePath(); break;
+    }
+  }
+
+  // 그룹 순서 → 모양 인덱스 매핑
+  const sortedKeys=Object.keys(groups).sort((a,b)=>isNaN(a)?a.localeCompare(b):Number(a)-Number(b));
+  const shapeIdx={};
+  sortedKeys.forEach((k,i)=>{ shapeIdx[k]=i; });
+
+  // 모양별 유니코드 기호 (범례용)
+  const SHAPE_SYMBOLS=['●','■','▲','▼','◆'];
+
+  // ── 개별 데이터 포인트 (모양 구분) ───────────────────────────
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.clip();
+  Object.entries(groups).forEach(([key,pts])=>{
+    const color=palette[key]||'#a0a8b0';
+    const rgb=hexToRgb(color);
+    const si=shapeIdx[key]||0;
+    pts.forEach(p=>{
+      const px=cx+p.P*r, py=cy-p.E*r;
+      drawShapePath(ctx,px,py,2.5,si);
+      ctx.fillStyle=`rgba(${rgb.r},${rgb.g},${rgb.b},0.68)`;
+      ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=0.8;
+      ctx.stroke();
+    });
+  });
+  ctx.restore();
+
+  // ── 평균 포인트 (같은 모양, 라벨 없음) ───────────────────────
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.clip();
+  Object.entries(groups).forEach(([key,pts])=>{
+    const color=palette[key]||'#a0a8b0';
+    const si=shapeIdx[key]||0;
+    const mP=pts.reduce((s,p)=>s+p.P,0)/pts.length;
+    const mE=pts.reduce((s,p)=>s+p.E,0)/pts.length;
+    const mpx=cx+mP*r, mpy=cy-mE*r;
+    // 흰 후광
+    drawShapePath(ctx,mpx,mpy,10,si);
+    ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.fill();
+    // 색상 채움
+    drawShapePath(ctx,mpx,mpy,7.5,si);
+    ctx.fillStyle=color; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.95)'; ctx.lineWidth=2; ctx.stroke();
+  });
+  ctx.restore();
+
+  // ── 범례 ─────────────────────────────────────────────────────
+  const legend=document.getElementById('density-legend');
+  const catKoL={vegetation:'식생(자연음)',vehicle:'차량(교통소음)',human:'인간활동음'};
+  legend.innerHTML=sortedKeys.map((k,i)=>{
+    const c=palette[k]||'#a0a8b0';
+    const sym=SHAPE_SYMBOLS[i%5];
+    const label=densityMode==='category'?(catKoL[k]||k):densityMode==='ratio'?k+'%':k;
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#666;">
+      <span style="font-size:14px;color:${c};line-height:1;">${sym}</span>
+      <span>${label} (n=${groups[k].length})</span></div>`;
+  }).join('');
+}
 
 // ══ 개선 추천 분석 ════════════════════════════════════════════════
 function renderRecommendations() {
